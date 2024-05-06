@@ -1,4 +1,4 @@
-from haystack.dataclasses import ChatMessage
+from haystack.dataclasses import ChatMessage  # type: ignore
 from slack_sdk import WebClient
 
 from chat_models import *
