@@ -10,6 +10,7 @@ from slack_sdk import WebClient
 from chat_models import *
 from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
+from ytsubs import is_youtube_video, yt_transcript
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
@@ -80,19 +81,35 @@ class ChatSession:
                             else ChatMessage.from_assistant(text)
                         )
                     # Append the content of URLs to this text
-                    if sent_by_user and ("http://" in text or "https://" in text):
-                        urls = re.findall(r"(<https?://\S+>)", text)
-                        for url in urls:
-                            # Slack wraps URLs in <brackets>
-                            url = url[1:-1]
-                            logger.debug(f"Reading text from [{url}].")
-                            content = scrape_text(url)
-                            if content:
-                                history.append(
-                                    ChatMessage.from_user(
-                                        f"<ScrapedTextFromURL url={url}>\n{content}\n</ScrapedTextFromURL>"
-                                    )
-                                )
+                    if sent_by_user:
+                        # ["blocks"][0]["elements"][0]["elements"][1]["url"]
+                        blocks = message.get("blocks")
+                        for block in blocks:
+                            elements = block.get("elements")
+                            for element in elements:
+                                inner_elements = element.get("elements")
+                                for unit in inner_elements:
+                                    if unit.get("type") == "link":
+                                        url = unit.get("url")
+                                        if not url:
+                                            continue
+
+                                        if is_youtube_video(url):
+                                            logger.debug(
+                                                f"Fetching youtube transcript for [{url}]."
+                                            )
+                                            content = yt_transcript(url)
+                                            tag = "YoutubeTranscript"
+                                        else:
+                                            logger.debug(f"Reading text from [{url}].")
+                                            content = scrape_text(url)
+                                            tag = "ScrapedTextFromURL"
+                                        if content:
+                                            history.append(
+                                                ChatMessage.from_user(
+                                                    f"<{tag} url={url}>\n{content}\n</{tag}>"
+                                                )
+                                            )
 
                 files = message.get("files", [])
                 for file in files:
