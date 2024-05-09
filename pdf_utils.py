@@ -1,12 +1,13 @@
 import os
+from io import BytesIO, StringIO
+
 import requests  # type: ignore
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.converter import TextConverter
 from pdfminer.layout import LAParams
-from io import StringIO, BytesIO
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfparser import PDFParser
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 cache: dict[str, str] = {}

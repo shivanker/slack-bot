@@ -1,13 +1,15 @@
 import logging
 import os
-import requests  # type: ignore
+import re
 from typing import Any
 
+import requests  # type: ignore
 from haystack.dataclasses import ChatMessage, ChatRole  # type: ignore
 from slack_sdk import WebClient
 
 from chat_models import *
 from pdf_utils import extract_text_from_pdf
+from web_reader import scrape_text
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
@@ -77,6 +79,21 @@ class ChatSession:
                             if sent_by_user
                             else ChatMessage.from_assistant(text)
                         )
+                    # Append the content of URLs to this text
+                    if sent_by_user and ("http://" in text or "https://" in text):
+                        urls = re.findall(r"(<https?://\S+>)", text)
+                        for url in urls:
+                            # Slack wraps URLs in <brackets>
+                            url = url[1:-1]
+                            logger.debug(f"Reading text from [{url}].")
+                            content = scrape_text(url)
+                            if content:
+                                history.append(
+                                    ChatMessage.from_user(
+                                        f"<ScrapedTextFromURL url={url}>\n{content}\n</ScrapedTextFromURL>"
+                                    )
+                                )
+
                 files = message.get("files", [])
                 for file in files:
                     logger.debug(f"Files:\n{file}")
@@ -119,7 +136,7 @@ class ChatSession:
             return merged_messages
 
         except Exception as e:
-            print(f"Error fetching conversation history: {str(e)}")
+            logger.error(f"Error fetching conversation history: {str(e)}")
             return []
 
     def process_direct_message(self, text, say, logger):
