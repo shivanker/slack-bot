@@ -31,6 +31,14 @@ def download_file(file_url: str):
     return response.content
 
 
+def check_mimetype(url) -> str:
+    try:
+        response = requests.head(url)
+        return response.headers.get("Content-Type", "unknown")
+    except requests.exceptions.RequestException:
+        return "unknown"
+
+
 class ChatSession:
     def __init__(self, user_id: str, channel_id: str, client: WebClient):
         self.user_id = user_id
@@ -39,7 +47,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = CLAUDE_3_SONNET
+        self.model = LLAMA3_70B
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -94,6 +102,25 @@ class ChatSession:
                                         if not url:
                                             continue
 
+                                        mimetype = check_mimetype(url)
+                                        logger.info(
+                                            f"Found link [{url}] of type [{mimetype}]."
+                                        )
+                                        if mimetype.startswith(
+                                            "image/"
+                                        ) or mimetype in [
+                                            "text/plain",
+                                            "application/pdf",
+                                        ]:
+                                            message.setdefault("files", []).append(
+                                                {
+                                                    "name": url,
+                                                    "url_private": url,
+                                                    "mimetype": mimetype,
+                                                }
+                                            )
+                                            continue
+
                                         if is_youtube_video(url):
                                             logger.debug(
                                                 f"Fetching youtube transcript for [{url}]."
@@ -115,15 +142,17 @@ class ChatSession:
                 for file in files:
                     logger.debug(f"Files:\n{file}")
                     msg = None
-                    if file.get("mimetype", "").startswith("image/"):
+                    mimetype = file.get("mimetype", "")
+                    logger.info(f"Found file [{file['name']}] of type [{mimetype}].")
+                    if mimetype.startswith("image/"):
                         msg = f"<Image name:{file['name']}/>"
                         file_url = file["url_private"]
                         logger.error("Found image attachment.")
-                    elif file.get("mimetype", "") == "text/plain":
+                    elif mimetype == "text/plain":
                         file_url = file["url_private"]
                         content = download_file(file_url)
                         msg = f"<File mimetype={file['mimetype']}>\n{content}\n</File>"
-                    elif file.get("mimetype", "") == "application/pdf":
+                    elif mimetype == "application/pdf":
                         file_url = file["url_private"]
                         msg = f"<File mimetype={file['mimetype']}>\n{extract_text_from_pdf(file_url)}\n</File>"
                     else:
@@ -163,12 +192,15 @@ class ChatSession:
         elif text == "\\gpt4":
             self.model = GPT_4_TURBO
             say(text="Model set to GPT-4.")
-        elif text == "\\llama70b":
+        elif text in ["\\llama70b", "\\llama70"]:
             self.model = LLAMA3_70B
             say(text="Model set to LLaMA 3 70B.")
-        elif text == "\\llama8b":
+        elif text in ["\\llama8b", "\\llama8", "\\llama"]:
             self.model = LLAMA3_8B
             say(text="Model set to LLaMA 3 8B.")
+        elif text in ["\\groq", "\\groq70", "\\groq70b"]:
+            self.model = GROQ_LLAMA3_70B
+            say(text="Model set to LLaMA 3 70B (Groq).")
         elif text == "\\opus":
             self.model = CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
