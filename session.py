@@ -14,6 +14,7 @@ from ytsubs import is_youtube_video, yt_transcript
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
+HELP_PREAMBLE = "Welcome to SushiBot."
 logger = logging.getLogger(__name__)
 
 download_cache: dict[str, Any] = {}
@@ -47,7 +48,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = LLAMA3_70B
+        self.model = GPT_4O
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -81,6 +82,8 @@ class ChatSession:
                         continue
                     elif text.startswith(ERROR_HEADER):
                         history.append(ChatMessage.from_assistant("<Unknown Error />"))
+                        continue
+                    elif text.startswith(HELP_PREAMBLE):
                         continue
                     else:
                         history.append(
@@ -187,34 +190,63 @@ class ChatSession:
 
     def process_direct_message(self, text, say, logger):
         self.say = say
-        if text == "\\reset":
+        cmd = text.strip()
+        if cmd == "\\reset":
             say(text="Session has been reset.")
-        elif text == "\\gpt4":
+        elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
+            say(
+                text=f"You are currently chatting with {self.model.model if not isinstance(self.model, GoogleAIGeminiChatGenerator) else 'Gemini 1.5 Pro'}."
+            )
+        elif cmd == "\\gpt4o":
+            self.model = GPT_4O
+            say(text="Model set to GPT-4o (Omni).")
+        elif cmd == "\\gpt4":
             self.model = GPT_4_TURBO
             say(text="Model set to GPT-4.")
-        elif text in ["\\llama70b", "\\llama70"]:
+        elif cmd in ["\\llama70b", "\\llama70"]:
             self.model = LLAMA3_70B
             say(text="Model set to LLaMA 3 70B.")
-        elif text in ["\\llama8b", "\\llama8", "\\llama"]:
+        elif cmd in ["\\llama8b", "\\llama8", "\\llama"]:
             self.model = LLAMA3_8B
             say(text="Model set to LLaMA 3 8B.")
-        elif text in ["\\groq", "\\groq70", "\\groq70b"]:
+        elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
             self.model = GROQ_LLAMA3_70B
             say(text="Model set to LLaMA 3 70B (Groq).")
-        elif text == "\\opus":
+        elif cmd == "\\opus":
             self.model = CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
-        elif text == "\\sonnet":
+        elif cmd == "\\sonnet":
             self.model = CLAUDE_3_SONNET
             say(text="Model set to Claude 3 Sonnet.")
-        elif text == "\\haiku":
+        elif cmd == "\\haiku":
             self.model = CLAUDE_3_HAIKU
             say(text="Model set to Claude 3 Haiku.")
-        elif text == "\\gemini":
+        elif cmd == "\\gemini":
             self.model = GEMINI_15_PRO
             say(text="Model set to Gemini 1.5 Pro.")
+        elif cmd == "\\help":
+            say(
+                f"""
+{HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Here's the full list of available commands you can use:\n
+- \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
+- \\who: Returns the name of the chat model you are chatting with.\n
+- \\gpt4: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
+- \\gpt4: Use GPT-4 Turbo for future messages. Preserves the session so far.\n
+- \\llama70: Use LLaMA-3-70B for future messages. Preserves the session so far.\n
+- \\groq70: Use LLaMA-3-70B (served by Groq - faster but lower token limit) for future messages. Preserves the session so far.\n
+- \\opus: Use Claude 3 Opus for future messages. Preserves the session so far.\n
+- \\sonnet: Use Claude 3 Sonnet for future messages. Preserves the session so far.\n
+- \\haiku: Use Claude 3 Haiku for future messages. Preserves the session so far.\n
+- \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
+                """
+            )
         else:
             messages = self.fetch_conversation_history()
+            if len(messages) < 2:
+                say(
+                    HELP_PREAMBLE
+                    + ' At any time, enter "\\help" for a list of commands.'
+                )
             messages = [ChatMessage.from_system(self.system_instr)] + messages
             logger.debug(messages)
             # Process the user's message using the selected model and conversation history

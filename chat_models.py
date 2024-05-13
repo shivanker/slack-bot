@@ -8,6 +8,7 @@ from haystack_integrations.components.generators.google_ai import (
 )
 
 GPT_35 = OpenAIChatGenerator(model="gpt-3.5-turbo")
+GPT_4O = OpenAIChatGenerator(model="gpt-4o")
 GPT_4_TURBO = OpenAIChatGenerator(model="gpt-4-turbo")
 CLAUDE_3_OPUS = AnthropicChatGenerator(model="claude-3-opus-20240229")
 CLAUDE_3_SONNET = AnthropicChatGenerator(model="claude-3-sonnet-20240229")
