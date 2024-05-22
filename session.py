@@ -197,7 +197,7 @@ class ChatSession:
             say(
                 text=f"You are currently chatting with {self.model.model if not isinstance(self.model, GoogleAIGeminiChatGenerator) else 'Gemini 1.5 Pro'}."
             )
-        elif cmd == "\\gpt4o":
+        elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = GPT_4O
             say(text="Model set to GPT-4o (Omni).")
         elif cmd == "\\gpt4":
@@ -245,7 +245,7 @@ class ChatSession:
             if len(messages) < 2:
                 say(
                     HELP_PREAMBLE
-                    + ' At any time, enter "\\help" for a list of commands.'
+                    + ' At any time, enter "\\help" for a list of commands. Response to your first message will follow now.'
                 )
             messages = [ChatMessage.from_system(self.system_instr)] + messages
             logger.debug(messages)
