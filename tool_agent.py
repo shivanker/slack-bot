@@ -7,7 +7,7 @@ from haystack import Pipeline, component  # type: ignore
 from haystack.components.builders import DynamicChatPromptBuilder  # type: ignore
 from haystack.components.generators.chat import OpenAIChatGenerator  # type: ignore
 from haystack.dataclasses import ChatMessage  # type: ignore
-from chat_models import *
+from haystack_llms import *
 from pydantic import BaseModel, ValidationError
 
 

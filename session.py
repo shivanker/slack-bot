@@ -1,13 +1,13 @@
 import logging
 import os
-import re
 from typing import Any
 
 import requests  # type: ignore
-from haystack.dataclasses import ChatMessage, ChatRole  # type: ignore
+from litellm import completion  # type: ignore
 from slack_sdk import WebClient
 
-from chat_models import *
+from lite_llms import TextModel
+from messages import ChatMessage, ChatRole
 from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
@@ -48,7 +48,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = GPT_4O
+        self.model = TextModel.GPT_4O
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -194,35 +194,33 @@ class ChatSession:
         if cmd == "\\reset":
             say(text="Session has been reset.")
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
-            say(
-                text=f"You are currently chatting with {self.model.__self__.model if self.model != GEMINI_15_PRO else 'Gemini 1.5 Pro'}."
-            )
+            say(text=f"You are currently chatting with {self.model.value}.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
-            self.model = GPT_4O
+            self.model = TextModel.GPT_4O
             say(text="Model set to GPT-4o (Omni).")
         elif cmd == "\\gpt4":
-            self.model = GPT_4_TURBO
+            self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
         elif cmd in ["\\llama70b", "\\llama70"]:
-            self.model = LLAMA3_70B
+            self.model = TextModel.LLAMA3_70B
             say(text="Model set to LLaMA 3 70B.")
         elif cmd in ["\\llama8b", "\\llama8", "\\llama"]:
-            self.model = LLAMA3_8B
+            self.model = TextModel.LLAMA3_8B
             say(text="Model set to LLaMA 3 8B.")
         elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
-            self.model = GROQ_LLAMA3_70B
+            self.model = TextModel.GROQ_LLAMA3_70B
             say(text="Model set to LLaMA 3 70B (Groq).")
         elif cmd == "\\opus":
-            self.model = CLAUDE_3_OPUS
+            self.model = TextModel.CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
         elif cmd == "\\sonnet":
-            self.model = CLAUDE_3_SONNET
+            self.model = TextModel.CLAUDE_3_SONNET
             say(text="Model set to Claude 3 Sonnet.")
         elif cmd == "\\haiku":
-            self.model = CLAUDE_3_HAIKU
+            self.model = TextModel.CLAUDE_3_HAIKU
             say(text="Model set to Claude 3 Haiku.")
         elif cmd == "\\gemini":
-            self.model = GEMINI_15_PRO
+            self.model = TextModel.GEMINI_15_PRO
             say(text="Model set to Gemini 1.5 Pro.")
         elif cmd == "\\help":
             say(
@@ -248,9 +246,9 @@ class ChatSession:
                     + ' At any time, enter "\\help" for a list of commands. Response to your first message will follow now.'
                 )
             messages = [ChatMessage.from_system(self.system_instr)] + messages
+            messages = [msg.to_openai_format() for msg in messages]
             logger.debug(messages)
             # Process the user's message using the selected model and conversation history
             # Implement your message processing logic here
-            response = self.model(messages)
-            for reply in response["replies"]:
-                say(text=reply.content)
+            response = completion(model=self.model.value, messages=messages)
+            say(text=response.choices[0].message.content)  # type: ignore
