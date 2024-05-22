@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from typing import Any
 
 import requests  # type: ignore
@@ -45,6 +46,7 @@ class ChatSession:
         self.user_id = user_id
         self.channel_id = channel_id
         self.client = client
+        self.streaming_mode = False
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
@@ -222,6 +224,14 @@ class ChatSession:
         elif cmd == "\\gemini":
             self.model = TextModel.GEMINI_15_PRO
             say(text="Model set to Gemini 1.5 Pro.")
+        elif cmd == "\\stream":
+            self.streaming_mode ^= True
+            say(
+                text=f'Streaming mode {"enabled" if self.streaming_mode else "disabled"}.'
+            )
+        elif cmd == "\\nostream":
+            self.streaming_mode = False
+            say(text="Streaming mode disabled.")
         elif cmd == "\\help":
             say(
                 f"""
@@ -236,6 +246,7 @@ class ChatSession:
 - \\sonnet: Use Claude 3 Sonnet for future messages. Preserves the session so far.\n
 - \\haiku: Use Claude 3 Haiku for future messages. Preserves the session so far.\n
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
+- \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
                 """
             )
         else:
@@ -248,7 +259,39 @@ class ChatSession:
             messages = [ChatMessage.from_system(self.system_instr)] + messages
             messages = [msg.to_openai_format() for msg in messages]
             logger.debug(messages)
+
             # Process the user's message using the selected model and conversation history
-            # Implement your message processing logic here
-            response = completion(model=self.model.value, messages=messages)
-            say(text=response.choices[0].message.content)  # type: ignore
+            if not self.streaming_mode:
+                response = completion(model=self.model.value, messages=messages)
+                say(text=response.choices[0].message.content)  # type: ignore
+                return
+
+            response = completion(
+                model=self.model.value, messages=messages, stream=True
+            )
+            initial_message = self.client.chat_postMessage(
+                channel=self.channel_id, text=f"[[ {self.model.value} ]] Thinking ..."
+            )["ts"]
+            last_update_time = time.time()
+            update_interval = 1  # Start with 1 second interval
+            start_time = time.time()
+            full_response = ""
+
+            for part in response:
+                content = part.choices[0].delta.content or ""  # type: ignore
+                full_response += content
+                current_time = time.time()
+                # Check if it's time to send an update
+                if current_time - last_update_time >= update_interval:
+                    self.client.chat_update(
+                        channel=self.channel_id, ts=initial_message, text=full_response
+                    )
+                    last_update_time = current_time
+                # Adjust the update interval if the process takes more than 30 seconds
+                if current_time - start_time > 30:
+                    update_interval = 2
+                if current_time - start_time > 90:
+                    update_interval = 2.5
+            self.client.chat_update(
+                channel=self.channel_id, ts=initial_message, text=full_response
+            )
