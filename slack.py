@@ -8,7 +8,6 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 
-from chat_models import *
 from session import ERROR_HEADER, ChatSession
 
 # Configure the argument parser

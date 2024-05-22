@@ -195,7 +195,7 @@ class ChatSession:
             say(text="Session has been reset.")
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
             say(
-                text=f"You are currently chatting with {self.model.model if not isinstance(self.model, GoogleAIGeminiChatGenerator) else 'Gemini 1.5 Pro'}."
+                text=f"You are currently chatting with {self.model.__self__.model if self.model != GEMINI_15_PRO else 'Gemini 1.5 Pro'}."
             )
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = GPT_4O
@@ -251,6 +251,6 @@ class ChatSession:
             logger.debug(messages)
             # Process the user's message using the selected model and conversation history
             # Implement your message processing logic here
-            response = self.model.run(messages)
+            response = self.model(messages)
             for reply in response["replies"]:
                 say(text=reply.content)
