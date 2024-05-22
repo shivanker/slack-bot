@@ -46,7 +46,7 @@ class ChatSession:
         self.user_id = user_id
         self.channel_id = channel_id
         self.client = client
-        self.streaming_mode = False
+        self.streaming_mode = True
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
@@ -284,7 +284,9 @@ class ChatSession:
                 # Check if it's time to send an update
                 if current_time - last_update_time >= update_interval:
                     self.client.chat_update(
-                        channel=self.channel_id, ts=initial_message, text=full_response
+                        channel=self.channel_id,
+                        ts=initial_message,
+                        text=f"{full_response} ... [[ thinking ]] ...",
                     )
                     last_update_time = current_time
                 # Adjust the update interval if the process takes more than 30 seconds
