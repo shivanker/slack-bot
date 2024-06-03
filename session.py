@@ -64,21 +64,27 @@ class ChatSession:
         )
         self.say = None
 
-    def fetch_conversation_history(self):
+    def fetch_conversation_history(self) -> tuple[list[ChatMessage], list[str]]:
         try:
             conversation_history = self.client.conversations_history(
                 channel=self.channel_id, limit=50
             )
+        except Exception as e:
+            logger.error(f"Error fetching conversation history: {str(e)}")
+            raise e
+        try:
             messages = conversation_history["messages"]
 
             history = []
+            commands = []
             for message in messages:
                 text = message.get("text")
                 sent_by_user = message.get("user") == self.user_id
                 if text:
-                    if text.startswith("\\") and " " not in text:
-                        # This message was a command, exclude it (and the response) from chat history
-                        history.pop()
+                    if self.is_command(text):
+                        # Exclude command's response from chat history
+                        if history: history.pop()
+                        commands.append(text)
                         if text == "\\reset":
                             break
                         continue
@@ -184,14 +190,19 @@ class ChatSession:
                     merged_messages.append(msg)
                     prev_role = msg.role
             logger.debug(f"<history>\n{merged_messages}</history>")
-            return merged_messages
+            return (merged_messages, list(reversed(commands)))
 
         except Exception as e:
-            logger.error(f"Error fetching conversation history: {str(e)}")
-            return []
-
-    def process_direct_message(self, text, say, logger):
-        self.say = say
+            logger.error(f"Error processing conversation: {str(e)}")
+            raise e
+    
+    def is_command(self, text):
+        if not isinstance(text, str):
+            return False
+        cmd = text.strip()
+        return cmd.startswith("\\")
+    
+    def process_command(self, text, say = lambda text: None):
         cmd = text.strip()
         if cmd == "\\reset":
             say(text="Session has been reset.")
@@ -250,50 +261,69 @@ class ChatSession:
                 """
             )
         else:
-            messages = self.fetch_conversation_history()
-            if len(messages) < 2:
-                say(
-                    HELP_PREAMBLE
-                    + ' At any time, enter "\\help" for a list of commands. Response to your first message will follow now.'
+            # say(f"Unknown command: [{cmd}]")
+            return False
+        return True
+
+    def process_direct_message(self, text, say, logger):
+        self.say = say
+
+        messages, commands = self.fetch_conversation_history()
+        if len(messages) < 2 and len(commands) == 0 and not self.is_command(text):
+            say(
+                HELP_PREAMBLE
+                + ' At any time, enter "\\help" for a list of commands. Response to your first message will follow now.'
+            )
+
+        # Re-run previous commands in session
+        for cmd in commands[:-1]:
+            self.process_command(cmd)
+        
+        # Run the latest command, responding if it's the current message
+        if self.is_command(text):
+            if self.process_command(text, say):
+                return # Don't return if command processing failed. Let's process it like a text
+        elif commands:
+            self.process_command(commands[-1])
+
+        messages = [ChatMessage.from_system(self.system_instr)] + messages
+        messages = [msg.to_openai_format() for msg in messages]
+        logger.debug(messages)
+
+        # Process the user's message using the selected model and conversation history
+        if not self.streaming_mode:
+            response = completion(model=self.model.value, messages=messages)
+            say(text=response.choices[0].message.content)  # type: ignore
+            return
+
+        response = completion(
+            model=self.model.value, messages=messages, stream=True
+        )
+        initial_message = self.client.chat_postMessage(
+            channel=self.channel_id, text=f"[[ {self.model.value} ]] Thinking ..."
+        )["ts"]
+        last_update_time = time.time()
+        update_interval = 1  # Start with 1 second interval
+        start_time = time.time()
+        full_response = ""
+
+        for part in response:
+            content = part.choices[0].delta.content or ""  # type: ignore
+            full_response += content
+            current_time = time.time()
+            # Check if it's time to send an update
+            if current_time - last_update_time >= update_interval:
+                self.client.chat_update(
+                    channel=self.channel_id,
+                    ts=initial_message,
+                    text=f"{full_response} ... [[ thinking ]] ...",
                 )
-            messages = [ChatMessage.from_system(self.system_instr)] + messages
-            messages = [msg.to_openai_format() for msg in messages]
-            logger.debug(messages)
-
-            # Process the user's message using the selected model and conversation history
-            if not self.streaming_mode:
-                response = completion(model=self.model.value, messages=messages)
-                say(text=response.choices[0].message.content)  # type: ignore
-                return
-
-            response = completion(
-                model=self.model.value, messages=messages, stream=True
-            )
-            initial_message = self.client.chat_postMessage(
-                channel=self.channel_id, text=f"[[ {self.model.value} ]] Thinking ..."
-            )["ts"]
-            last_update_time = time.time()
-            update_interval = 1  # Start with 1 second interval
-            start_time = time.time()
-            full_response = ""
-
-            for part in response:
-                content = part.choices[0].delta.content or ""  # type: ignore
-                full_response += content
-                current_time = time.time()
-                # Check if it's time to send an update
-                if current_time - last_update_time >= update_interval:
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=initial_message,
-                        text=f"{full_response} ... [[ thinking ]] ...",
-                    )
-                    last_update_time = current_time
-                # Adjust the update interval if the process takes more than 30 seconds
-                if current_time - start_time > 30:
-                    update_interval = 2
-                if current_time - start_time > 90:
-                    update_interval = 2.5
-            self.client.chat_update(
-                channel=self.channel_id, ts=initial_message, text=full_response
-            )
+                last_update_time = current_time
+            # Adjust the update interval if the process takes more than 30 seconds
+            if current_time - start_time > 30:
+                update_interval = 2
+            if current_time - start_time > 90:
+                update_interval = 2.5
+        self.client.chat_update(
+            channel=self.channel_id, ts=initial_message, text=full_response
+        )

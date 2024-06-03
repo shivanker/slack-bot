@@ -23,12 +23,13 @@ logging.basicConfig(
 )
 
 # Initializes your app with your bot token and socket mode handler
-app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
+app = App(
+    token=os.environ.get("SLACK_BOT_TOKEN"),
+    signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
+)
 
 # Also initialize the WebClient with bot token
 client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
-
-user_sessions: dict[str, ChatSession] = {}
 
 
 @app.event("app_mention")
@@ -56,9 +57,7 @@ def handle_message(body, say, logger):
     text = event.get("text") or ""
 
     try:
-        user_session = user_sessions.setdefault(
-            user_id, ChatSession(user_id, channel_id, client)
-        )
+        user_session = ChatSession(user_id, channel_id, client)
         user_session.process_direct_message(text, say, logger)
     except Exception as e:
         say(ERROR_HEADER + "\n```\n" + str(e) + "\n```\n")
@@ -67,4 +66,5 @@ def handle_message(body, say, logger):
 
 # Start your app
 if __name__ == "__main__":
-    SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
+    # SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
+    app.start(port=int(os.environ.get("PORT", 80)))
