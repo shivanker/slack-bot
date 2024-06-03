@@ -1,17 +1,16 @@
+from typing import Any
 import logging
 import os
 import time
-from typing import Any
-
-import requests  # type: ignore
-from litellm import completion  # type: ignore
-from slack_sdk import WebClient
 
 from lite_llms import TextModel
+from litellm import completion  # type: ignore
 from messages import ChatMessage, ChatRole
 from pdf_utils import extract_text_from_pdf
+from slack_sdk import WebClient
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
+import requests  # type: ignore
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"

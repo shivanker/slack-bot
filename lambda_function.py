@@ -1,29 +1,23 @@
-import argparse
 import logging
 import os
 import traceback
-import sys
 
 from slack_bolt import App
+from slack_bolt.adapter.aws_lambda import SlackRequestHandler
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 
 from session import ERROR_HEADER, ChatSession
 
-# Configure the argument parser
-parser = argparse.ArgumentParser()
-parser.add_argument("-l", "--log-level", default="INFO", help="Set the log level")
-args = parser.parse_args()
-
 # Configure logger
 logging.basicConfig(
-    level=getattr(logging, args.log_level.upper()),
+    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()),
     format="%(levelname).1s%(asctime)s %(filename)s:%(lineno)d] %(message)s",
     datefmt="%m%d %H:%M:%S",
 )
 
 # Initializes your app with your bot token and socket mode handler
-app = App(
+slack_app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
 )
@@ -32,7 +26,7 @@ app = App(
 client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
 
 
-@app.event("app_mention")
+@slack_app.event("app_mention")
 def handle_mention(body, say, logger):
     logger.debug(body)
     text = body["event"]["text"]
@@ -45,7 +39,7 @@ def handle_mention(body, say, logger):
     )
 
 
-@app.event("message")
+@slack_app.event("message")
 def handle_message(body, say, logger):
     logger.debug(body)
     event = body["event"]
@@ -64,7 +58,14 @@ def handle_message(body, say, logger):
         traceback.print_exc()
 
 
+slack_handler = SlackRequestHandler(app=slack_app)
+
+
+def lambda_handler(event, context):
+    return slack_handler.handle(event, context)
+
+
 # Start your app
 if __name__ == "__main__":
     # SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
-    app.start(port=int(os.environ.get("PORT", 80)))
+    slack_app.start(port=int(os.environ.get("PORT", 80)))
