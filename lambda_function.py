@@ -51,6 +51,12 @@ def handle_message(body, say, logger):
     user_id = event["user"]
     text = event.get("text") or ""
 
+    # Check if the message was sent by the user and not this app
+    bot_user_id = slack_app.client.auth_test()["user_id"]
+    if user_id == bot_user_id:
+        logger.info("This message was sent by the bot itself. Ignoring.")
+        return
+
     try:
         user_session = ChatSession(user_id, channel_id, client)
         user_session.process_direct_message(text, say, logger)
