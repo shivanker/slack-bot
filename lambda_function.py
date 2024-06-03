@@ -77,7 +77,6 @@ logging.basicConfig(
 )
 def lambda_handler(event, context):
     slack_handler = SlackRequestHandler(app=slack_app)
-    logger.info("Hello, lambda is ready!")
     return slack_handler.handle(event, context)  # type:ignore
 
 

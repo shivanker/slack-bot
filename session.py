@@ -190,7 +190,7 @@ class ChatSession:
                 else:
                     merged_messages.append(msg)
                     prev_role = msg.role
-            logger.debug(f"<history>\n{merged_messages}</history>")
+            logger.info(f"<history>\n{merged_messages}</history>")
             return (merged_messages, list(reversed(commands)))
 
         except Exception as e:
