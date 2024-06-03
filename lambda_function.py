@@ -2,19 +2,19 @@ import logging
 import os
 import traceback
 
+from aws_lambda_powertools import Logger, Metrics
+from aws_lambda_powertools.event_handler import APIGatewayRestResolver
+from aws_lambda_powertools.logging import correlation_paths
 from slack_bolt import App
 from slack_bolt.adapter.aws_lambda import SlackRequestHandler
-from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 
 from session import ERROR_HEADER, ChatSession
 
 # Configure logger
-logging.basicConfig(
-    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()),
-    format="%(levelname).1s%(asctime)s %(filename)s:%(lineno)d] %(message)s",
-    datefmt="%m%d %H:%M:%S",
-)
+app = APIGatewayRestResolver()
+logger = Logger()
+metrics = Metrics(namespace="Powertools")
 
 # Initializes your app with your bot token and socket mode handler
 slack_app = App(
@@ -61,11 +61,19 @@ def handle_message(body, say, logger):
 slack_handler = SlackRequestHandler(app=slack_app)
 
 
+@logger.inject_lambda_context(
+    log_event=True, correlation_id_path=correlation_paths.API_GATEWAY_REST
+)
 def lambda_handler(event, context):
+    logger.info("Hello, lambda is ready!")
     return slack_handler.handle(event, context)
 
 
 # Start your app
 if __name__ == "__main__":
-    # SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
+    logging.basicConfig(
+        level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()),
+        format="%(levelname).1s%(asctime)s %(filename)s:%(lineno)d] %(message)s",
+        datefmt="%m%d %H:%M:%S",
+    )
     slack_app.start(port=int(os.environ.get("PORT", 80)))
