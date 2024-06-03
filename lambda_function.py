@@ -20,6 +20,7 @@ metrics = Metrics(namespace="Powertools")
 slack_app = App(
     token=os.environ.get("SLACK_BOT_TOKEN"),
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
+    process_before_response=True,
 )
 
 # Also initialize the WebClient with bot token
@@ -58,15 +59,20 @@ def handle_message(body, say, logger):
         traceback.print_exc()
 
 
-slack_handler = SlackRequestHandler(app=slack_app)
+SlackRequestHandler.clear_all_log_handlers()
+logging.basicConfig(
+    format="%(asctime)s %(message)s",
+    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper()),
+)
 
 
 @logger.inject_lambda_context(
     log_event=True, correlation_id_path=correlation_paths.API_GATEWAY_REST
 )
 def lambda_handler(event, context):
+    slack_handler = SlackRequestHandler(app=slack_app)
     logger.info("Hello, lambda is ready!")
-    return slack_handler.handle(event, context)
+    return slack_handler.handle(event, context)  # type:ignore
 
 
 # Start your app
