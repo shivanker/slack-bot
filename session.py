@@ -1,21 +1,22 @@
-from typing import Any
-import logging
 import os
 import time
+from typing import Any
+
+import requests  # type: ignore
+from aws_lambda_powertools import Logger
+from litellm import completion  # type: ignore
+from slack_sdk import WebClient
 
 from lite_llms import TextModel
-from litellm import completion  # type: ignore
 from messages import ChatMessage, ChatRole
 from pdf_utils import extract_text_from_pdf
-from slack_sdk import WebClient
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
-import requests  # type: ignore
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
 HELP_PREAMBLE = "Welcome to SushiBot."
-logger = logging.getLogger(__name__)
+logger = Logger()
 
 download_cache: dict[str, Any] = {}
 
@@ -82,7 +83,8 @@ class ChatSession:
                 if text:
                     if self.is_command(text):
                         # Exclude command's response from chat history
-                        if history: history.pop()
+                        if history:
+                            history.pop()
                         commands.append(text)
                         if text == "\\reset":
                             break
@@ -194,14 +196,14 @@ class ChatSession:
         except Exception as e:
             logger.error(f"Error processing conversation: {str(e)}")
             raise e
-    
+
     def is_command(self, text):
         if not isinstance(text, str):
             return False
         cmd = text.strip()
         return cmd.startswith("\\")
-    
-    def process_command(self, text, say = lambda text: None):
+
+    def process_command(self, text, say=lambda text: None):
         cmd = text.strip()
         if cmd == "\\reset":
             say(text="Session has been reset.")
@@ -277,11 +279,11 @@ class ChatSession:
         # Re-run previous commands in session
         for cmd in commands[:-1]:
             self.process_command(cmd)
-        
+
         # Run the latest command, responding if it's the current message
         if self.is_command(text):
             if self.process_command(text, say):
-                return # Don't return if command processing failed. Let's process it like a text
+                return  # Don't return if command processing failed. Let's process it like a text
         elif commands:
             self.process_command(commands[-1])
 
@@ -295,9 +297,7 @@ class ChatSession:
             say(text=response.choices[0].message.content)  # type: ignore
             return
 
-        response = completion(
-            model=self.model.value, messages=messages, stream=True
-        )
+        response = completion(model=self.model.value, messages=messages, stream=True)
         initial_message = self.client.chat_postMessage(
             channel=self.channel_id, text=f"[[ {self.model.value} ]] Thinking ..."
         )["ts"]
