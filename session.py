@@ -228,8 +228,8 @@ class ChatSession:
             self.model = TextModel.CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
         elif cmd == "\\sonnet":
-            self.model = TextModel.CLAUDE_3_SONNET
-            say(text="Model set to Claude 3 Sonnet.")
+            self.model = TextModel.CLAUDE_35_SONNET
+            say(text="Model set to Claude 3.5 Sonnet.")
         elif cmd == "\\haiku":
             self.model = TextModel.CLAUDE_3_HAIKU
             say(text="Model set to Claude 3 Haiku.")
@@ -255,7 +255,7 @@ class ChatSession:
 - \\llama70: Use LLaMA-3-70B for future messages. Preserves the session so far.\n
 - \\groq70: Use LLaMA-3-70B (served by Groq - faster but lower token limit) for future messages. Preserves the session so far.\n
 - \\opus: Use Claude 3 Opus for future messages. Preserves the session so far.\n
-- \\sonnet: Use Claude 3 Sonnet for future messages. Preserves the session so far.\n
+- \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
 - \\haiku: Use Claude 3 Haiku for future messages. Preserves the session so far.\n
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
