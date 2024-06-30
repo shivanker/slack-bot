@@ -9,6 +9,7 @@ class TextModel(Enum):
     CLAUDE_35_SONNET = "claude-3-5-sonnet-20240620"
     CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
     GEMINI_15_PRO = "gemini/gemini-1.5-pro-latest"
+    GEMINI_15_FLASH = "gemini/gemini-1.5-flash-latest"
     GROQ_LLAMA3_70B = "groq/llama3-70b-8192"
     GROQ_LLAMA3_8B = "groq/llama3-8b-8192"
     LLAMA3_70B = "fireworks_ai/llama-v3-70b-instruct"

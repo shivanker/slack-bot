@@ -75,8 +75,8 @@ class ChatSession:
         try:
             messages = conversation_history["messages"]
 
-            history = []
-            commands = []
+            history: list[ChatMessage] = []
+            commands: list[str] = []
             for message in messages:
                 text = message.get("text")
                 sent_by_user = message.get("user") == self.user_id
@@ -182,14 +182,14 @@ class ChatSession:
                 history = [ChatMessage.from_user("...")] + history
 
             # Merge consecutive user messages into one
-            merged_messages = []
+            merged_messages: list[ChatMessage] = []
             prev_role = None
-            for msg in history:
-                if msg.is_from(prev_role):  # type: ignore
-                    merged_messages[-1].content += "\n" + msg.content
+            for chatmsg in history:
+                if chatmsg.is_from(prev_role):  # type: ignore
+                    merged_messages[-1].content += "\n" + chatmsg.content
                 else:
-                    merged_messages.append(msg)
-                    prev_role = msg.role
+                    merged_messages.append(chatmsg)
+                    prev_role = chatmsg.role
             logger.debug(f"<history>\n{merged_messages}</history>")
             return (merged_messages, list(reversed(commands)))
 
@@ -215,10 +215,10 @@ class ChatSession:
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
-        elif cmd in ["\\llama70b", "\\llama70"]:
+        elif cmd in ["\\llama70b", "\\llama70", "\\llama"]:
             self.model = TextModel.LLAMA3_70B
             say(text="Model set to LLaMA 3 70B.")
-        elif cmd in ["\\llama8b", "\\llama8", "\\llama"]:
+        elif cmd in ["\\llama8b", "\\llama8"]:
             self.model = TextModel.LLAMA3_8B
             say(text="Model set to LLaMA 3 8B.")
         elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
@@ -236,6 +236,9 @@ class ChatSession:
         elif cmd == "\\gemini":
             self.model = TextModel.GEMINI_15_PRO
             say(text="Model set to Gemini 1.5 Pro.")
+        elif cmd == "\\flash":
+            self.model = TextModel.GEMINI_15_FLASH
+            say(text="Model set to Gemini 1.5 Flash.")
         elif cmd == "\\stream":
             self.streaming_mode ^= True
             say(

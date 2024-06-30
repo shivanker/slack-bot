@@ -3,3 +3,4 @@
 build/**
 .env
 lambda-deps-layer/build/**
+.DS_Store
