@@ -77,11 +77,9 @@ logging.basicConfig(
 @logger.inject_lambda_context(
     log_event=True, correlation_id_path=correlation_paths.API_GATEWAY_REST
 )
-def lambda_handler(event, context):
-    if (
-        "X-Slack-Retry-Num" in event["headers"]
-        or "x-slack-retry-num" in event["headers"]
-    ):
+def handler(event, context):
+    headers = event.get("headers", {})
+    if "X-Slack-Retry-Num" in headers or "x-slack-retry-num" in headers:
         logger.debug("Ignoring Slack retry")
         return 200
     slack_app.event("app_mention")(ack=just_ack, lazy=[handle_mention])
