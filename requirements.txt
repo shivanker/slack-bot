@@ -3,7 +3,6 @@ aws-lambda-powertools==2.38.1
 black==24.4.2
 exceptiongroup==1.2.1
 google-generativeai==0.7.1
-grpcio-status==1.62.2
 isort==5.13.2
 litellm==1.37.20
 mypy==1.10.0

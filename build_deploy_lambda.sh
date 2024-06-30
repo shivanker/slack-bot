@@ -5,7 +5,6 @@ mkdir -p build/deployment_package
 cd build
 
 pip install \
---platform manylinux2014_aarch64 \
 --no-cache \
 --target=deployment_package/ \
 --implementation cp \
