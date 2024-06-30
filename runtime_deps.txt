@@ -1,7 +1,0 @@
-aws-lambda-powertools==2.38.1
-google-generativeai==0.7.1
-litellm==1.37.20
-pdfminer.six==20231228
-slack-bolt==1.18.1
-trafilatura==1.9.0
-youtube-transcript-api==0.6.2

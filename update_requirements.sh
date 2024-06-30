@@ -2,4 +2,4 @@
 set -e
 
 pip list --not-required --format=freeze 2> /dev/null | \
-  grep -vE '^(pip|setuptools|wheel)==' > requirements.txt
+  grep -vE '^(pip|setuptools|wheel)==' > requirements-dev.txt
