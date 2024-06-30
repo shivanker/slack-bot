@@ -6,7 +6,6 @@ mkdir -p build/python
 cd build
 
 pip install \
---platform manylinux2014_aarch64 \
 --no-cache \
 --target=python/ \
 --implementation cp \
