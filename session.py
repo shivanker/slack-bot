@@ -321,7 +321,6 @@ class ChatSession:
         full_response = ""
         current_message = ""
         message_ts = initial_message
-        last_chunk = ""
 
         for part in response:
             last_chunk = part.choices[0].delta.content or ""  # type: ignore
@@ -332,23 +331,27 @@ class ChatSession:
             # Check if it's time to send an update or start a new message
             if (
                 current_time - last_update_time >= update_interval
-                or len(current_message.split()) > 400
-                or len(current_message) > 3000
+                or len((current_message).split()) > 320
+                or len((current_message)) > 2400
             ):
-                if len(current_message.split()) > 400 or len(current_message) > 3000:
-                    # Start a new message with just the new content
-                    message_ts = self.client.chat_postMessage(
-                        channel=self.channel_id,
-                        text=f"{last_chunk} ... [[ thinking ]] ...",
-                    )["ts"]
-                    current_message = last_chunk
-                else:
-                    # Update existing message
+                # Update existing message
+                self.client.chat_update(
+                    channel=self.channel_id,
+                    ts=message_ts,
+                    text=f"{current_message} ... [[ {self.model.value} thinking ]] ...",
+                )
+                if len(current_message.split()) > 320 or len(current_message) > 2400:
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=f"{current_message} ... [[ thinking ]] ...",
+                        text=f"{current_message} ... [[ continued below ]] ...",
                     )
+                    # Start a new message with just the new content
+                    message_ts = self.client.chat_postMessage(
+                        channel=self.channel_id,
+                        text=f"... [[ {self.model.value} thinking ]] ...",
+                    )["ts"]
+                    current_message = ""
                 last_update_time = current_time
 
             # Adjust the update interval if the process takes more than 30 seconds
