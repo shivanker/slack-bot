@@ -3,9 +3,12 @@ from typing import Union
 
 import trafilatura  # type: ignore
 
-MAX_RESULT_LENGTH_CHAR = 1000 * 4 * 100  # roughly 100k tokens
-cache: dict[str, str] = {}
+import s3_cache
+
 logger = logging.getLogger(__name__)
+MAX_RESULT_LENGTH_CHAR = 1000 * 4 * 100  # roughly 100k tokens
+CACHE_NAMESPACE = "web_reader"
+s3_cache.set_max_size(CACHE_NAMESPACE, 150)
 
 
 def page_result(text: str, cursor: int, max_length: int) -> str:
@@ -26,8 +29,10 @@ def get_url(url: str) -> str:
 
 def scrape_text(url: str) -> Union[str, None]:
     try:
-        if url in cache:
-            return cache[url]
+        cached_content = s3_cache.get_cache(CACHE_NAMESPACE, url)
+        if cached_content:
+            return cached_content
+
         page_contents = get_url(url)
 
         if len(page_contents) > MAX_RESULT_LENGTH_CHAR:
@@ -36,10 +41,7 @@ def scrape_text(url: str) -> Union[str, None]:
                 + " ... <truncated>"
             )
 
-        cache[url] = page_contents
-        if len(cache) > 100:
-            oldest_url = next(iter(cache))
-            del cache[oldest_url]
+        s3_cache.set_cache(CACHE_NAMESPACE, url, page_contents)
         return page_contents
     except Exception as e:
         logger.error(f"Failed to read article from [{url}].")

@@ -9,13 +9,18 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
+import s3_cache
+
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-cache: dict[str, str] = {}
+CACHE_NAMESPACE = "pdf_utils"
+s3_cache.set_max_size(CACHE_NAMESPACE, 100)
 
 
 def extract_text_from_pdf(pdf_url):
-    if pdf_url in cache:
-        return cache[pdf_url]
+    cached_text = s3_cache.get_cache(CACHE_NAMESPACE, pdf_url)
+    if cached_text:
+        return cached_text
+
     response = requests.get(pdf_url, headers={"Authorization": f"Bearer {BOT_TOKEN}"})
     if response.status_code != 200:
         raise Exception(
@@ -35,8 +40,5 @@ def extract_text_from_pdf(pdf_url):
     device.close()
     text_output.close()
 
-    cache[pdf_url] = text
-    if len(cache) > 10:
-        oldest_url = next(iter(cache))
-        del cache[oldest_url]
+    s3_cache.set_cache(CACHE_NAMESPACE, pdf_url, text)
     return text

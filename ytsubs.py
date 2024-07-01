@@ -4,8 +4,11 @@ from typing import Union
 
 from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
 
-cache: dict[str, str] = {}
+import s3_cache
+
 logger = logging.getLogger(__name__)
+CACHE_NAMESPACE = "ytsubs"
+s3_cache.set_max_size(CACHE_NAMESPACE, 200)
 
 
 def is_youtube_video(url):
@@ -42,8 +45,9 @@ def extract_video_id(url):
 
 def yt_transcript(url: str) -> Union[str, None]:
     """Function to fetch the transcript of a YouTube video, given the URL."""
-    if url in cache:
-        return cache[url]
+    cached_transcript = s3_cache.get_cache(CACHE_NAMESPACE, url)
+    if cached_transcript:
+        return cached_transcript
     try:
         video_id = extract_video_id(url)
         if video_id:
@@ -53,10 +57,7 @@ def yt_transcript(url: str) -> Union[str, None]:
                     f"[{segment['start']:.2f}] {segment['text']}"
                     for segment in transcript
                 )
-                cache[url] = transcript
-                if len(cache) > 100:
-                    oldest_url = next(iter(cache))
-                    del cache[oldest_url]
+                s3_cache.set_cache(CACHE_NAMESPACE, url, transcript)
                 return transcript
     except Exception as e:
         logger.error(f"Failed to extract transcript for [{url}].")
