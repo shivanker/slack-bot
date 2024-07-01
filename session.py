@@ -344,7 +344,7 @@ class ChatSession:
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=f"{current_message} ... [[ continued below ]] ...",
+                        text=current_message,
                     )
                     # Start a new message with just the new content
                     message_ts = self.client.chat_postMessage(
