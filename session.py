@@ -2,13 +2,15 @@ import os
 import time
 from typing import Any
 
+import litellm  # type: ignore
 import requests  # type: ignore
+
 from aws_lambda_powertools import Logger
+from lite_llms import TextModel
 from litellm import completion  # type: ignore
+from messages import ChatMessage, ChatRole
 from slack_sdk import WebClient
 
-from lite_llms import TextModel
-from messages import ChatMessage, ChatRole
 from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
@@ -17,6 +19,14 @@ BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
 HELP_PREAMBLE = "Welcome to SushiBot."
 logger = Logger()
+
+################
+## Global config
+################
+
+# Allow litellm to insert empty user msg in claude requests for instance
+litellm.modify_params = True
+
 
 download_cache: dict[str, Any] = {}
 
