@@ -31,13 +31,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and push
-        run: |
-          docker buildx create --use
-          docker buildx build --platform linux/arm64 \
-            --tag ${{ steps.login-ecr.outputs.registry }}/slackbot:${{ github.sha }} \
-            --tag ${{ steps.login-ecr.outputs.registry }}/slackbot:latest \
-            --push \
-            .
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/slackbot:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/slackbot:latest
 
       - name: Update Lambda Function
         env:
