@@ -28,7 +28,7 @@ logger = Logger()
 litellm.modify_params = True
 
 
-download_cache: dict[str, Any] = {}
+download_cache: dict[str, bytes] = {}
 
 
 def download_file(file_url: str):
@@ -37,10 +37,11 @@ def download_file(file_url: str):
     response = requests.get(file_url, headers={"Authorization": f"Bearer {BOT_TOKEN}"})
     if response.status_code != 200:
         raise Exception(f"Error downloading file: {response.status_code}")
+    download_cache[file_url] = response.content
     if len(download_cache) > 20:
         oldest_url = next(iter(download_cache))
         del download_cache[oldest_url]
-    return response.content
+    return download_cache[file_url]
 
 
 def check_mimetype(url) -> str:
