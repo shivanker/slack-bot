@@ -51,3 +51,41 @@ jobs:
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
             --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+# TODO: Try something like below to avoid rebuilding when packages don't change
+# - name: Get last successful deployment
+#   id: last_deploy
+#   run: |
+#     LAST_TAG=$(git describe --tags --abbrev=0 --match "deploy-*" 2>/dev/null || echo "")
+#     echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+
+# - name: Check if requirements.txt has changed
+#   id: check_requirements
+#   run: |
+#     LAST_TAG=${{ steps.last_deploy.outputs.last_tag }}
+#     if [ -z "$LAST_TAG" ]; then
+#       echo "requirements_changed=true" >> $GITHUB_OUTPUT
+#     else
+#       CHANGED=$(git diff $LAST_TAG..HEAD --name-only | grep -q "requirements.txt" && echo "true" || echo "false")
+#       echo "requirements_changed=$CHANGED" >> $GITHUB_OUTPUT
+#     fi
+
+# - name: Build and push
+#   uses: docker/build-push-action@v4
+#   with:
+#     context: .
+#     platforms: linux/arm64
+#     provenance: false
+#     push: true
+#     file: ${{ steps.check_requirements.outputs.requirements_changed == 'true' && 'Dockerfile' || 'Dockerfile_v2' }}
+#     tags: |
+#       ${{ steps.login-ecr.outputs.registry }}/slackbot:${{ github.sha }}
+#       ${{ steps.login-ecr.outputs.registry }}/slackbot:latest
+
+# - name: Tag successful deployment
+#   if: success()
+#   run: |
+#     git config user.name github-actions
+#     git config user.email github-actions@github.com
+#     git tag -a "deploy-${{ github.sha }}" -m "Successful deployment"
+#     git push origin "deploy-${{ github.sha }}"
