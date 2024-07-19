@@ -4,6 +4,7 @@ from enum import Enum
 class TextModel(Enum):
     GPT_35 = "gpt-3.5-turbo"
     GPT_4O = "gpt-4o"
+    GPT_4O_MINI = "gpt-4o-mini"
     GPT_4_TURBO = "gpt-4-turbo"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
     CLAUDE_35_SONNET = "claude-3-5-sonnet-20240620"

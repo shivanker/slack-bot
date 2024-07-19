@@ -223,6 +223,9 @@ class ChatSession:
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
             say(text="Model set to GPT-4o (Omni).")
+        elif cmd in ["\\gpt4o-mini", "\\mini"]:
+            self.model = TextModel.GPT_4O_MINI
+            say(text="Model set to GPT-4o Mini.")
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
@@ -264,14 +267,12 @@ class ChatSession:
 {HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
-- \\gpt4: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
-- \\gpt4: Use GPT-4 Turbo for future messages. Preserves the session so far.\n
-- \\llama70: Use LLaMA-3-70B for future messages. Preserves the session so far.\n
-- \\groq70: Use LLaMA-3-70B (served by Groq - faster but lower token limit) for future messages. Preserves the session so far.\n
-- \\opus: Use Claude 3 Opus for future messages. Preserves the session so far.\n
+- \\gpt4o: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
+- \\mini: Use GPT-4o Mini for future messages. Preserves the session so far.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
-- \\haiku: Use Claude 3 Haiku for future messages. Preserves the session so far.\n
+- \\llama70: Use LLaMA-3-70B for future messages. Preserves the session so far.\n
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
+- \\flash: Use Gemini 1.5 Flash for future messages. Preserves the session so far.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
                 """
             )
