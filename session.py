@@ -229,15 +229,18 @@ class ChatSession:
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
-        elif cmd in ["\\llama70b", "\\llama70", "\\llama"]:
+        elif cmd in ["\\llama", "\\llama31", "\\llama405", "\\llama405b"]:
+            self.model = TextModel.LLAMA31_405B
+            say(text="Model set to LLaMA-3.1 405B.")
+        elif cmd in ["\\llama70b", "\\llama70"]:
             self.model = TextModel.LLAMA3_70B
-            say(text="Model set to LLaMA 3 70B.")
+            say(text="Model set to LLaMA-3 70B.")
         elif cmd in ["\\llama8b", "\\llama8"]:
-            self.model = TextModel.LLAMA3_8B
-            say(text="Model set to LLaMA 3 8B.")
-        elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
-            self.model = TextModel.GROQ_LLAMA3_70B
-            say(text="Model set to LLaMA 3 70B (Groq).")
+            self.model = TextModel.LLAMA31_8B
+            say(text="Model set to LLaMA-3.1 8B.")
+        # elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
+        #     self.model = TextModel.GROQ_LLAMA3_70B
+        #     say(text="Model set to LLaMA 3 70B (Groq).")
         elif cmd == "\\opus":
             self.model = TextModel.CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
@@ -270,7 +273,7 @@ class ChatSession:
 - \\gpt4o: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
 - \\mini: Use GPT-4o Mini for future messages. Preserves the session so far.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
-- \\llama70: Use LLaMA-3-70B for future messages. Preserves the session so far.\n
+- \\llama: Use LLaMA-3.1 405B for future messages. Preserves the session so far.\n
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
 - \\flash: Use Gemini 1.5 Flash for future messages. Preserves the session so far.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
