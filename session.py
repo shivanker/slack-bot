@@ -223,10 +223,13 @@ class ChatSession:
         elif cmd in ["\\o1", "\\o1-preview"]:
             self.model = TextModel.O1_PREVIEW
             say(text="Model set to O1 Preview.")
+        elif cmd in ["\\o1-mini", "\\o1mini", "\\mini"]:
+            self.model = TextModel.O1_MINI
+            say(text="Model set to O1 Mini.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
             say(text="Model set to GPT-4o (Omni).")
-        elif cmd in ["\\gpt4o-mini", "\\mini"]:
+        elif cmd in ["\\gpt4o-mini"]:
             self.model = TextModel.GPT_4O_MINI
             say(text="Model set to GPT-4o Mini.")
         elif cmd == "\\gpt4":
@@ -274,8 +277,8 @@ class ChatSession:
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
 - \\o1: Use O1 Preview for future messages. Preserves the session so far.\n
+- \\o1mini: Use O1 Mini for future messages. Preserves the session so far.\n
 - \\gpt4o: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
-- \\mini: Use GPT-4o Mini for future messages. Preserves the session so far.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
 - \\llama: Use LLaMA-3.1 405B for future messages. Preserves the session so far.\n
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
@@ -311,14 +314,14 @@ class ChatSession:
 
         messages = (
             [ChatMessage.from_system(self.system_instr)] + messages
-            if self.model != TextModel.O1_PREVIEW
+            if self.model.value.startswith("o1")
             else [ChatMessage.from_user(self.system_instr)] + messages
         )
         messages = [msg.to_openai_format() for msg in messages]
         logger.debug(messages)
 
         # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode or self.model == TextModel.O1_PREVIEW:
+        if not self.streaming_mode or self.model.value.startswith("o1"):
             response = completion(model=self.model.value, messages=messages)
             say(text=response.choices[0].message.content)  # type: ignore
             return
