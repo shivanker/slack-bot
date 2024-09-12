@@ -314,7 +314,7 @@ class ChatSession:
 
         messages = (
             [ChatMessage.from_system(self.system_instr)] + messages
-            if self.model.value.startswith("o1")
+            if not self.model.value.startswith("o1")
             else [ChatMessage.from_user(self.system_instr)] + messages
         )
         messages = [msg.to_openai_format() for msg in messages]
