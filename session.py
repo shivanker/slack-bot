@@ -318,7 +318,7 @@ class ChatSession:
         logger.debug(messages)
 
         # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode:
+        if not self.streaming_mode or self.model == TextModel.O1_PREVIEW:
             response = completion(model=self.model.value, messages=messages)
             say(text=response.choices[0].message.content)  # type: ignore
             return
