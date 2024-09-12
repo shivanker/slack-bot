@@ -1,6 +1,7 @@
 aws-lambda-powertools==2.38.1
 google-generativeai==0.7.1
-litellm==1.37.20
+grpcio-status==1.62.2
+litellm==1.44.27
 pdfminer.six==20231228
 slack-bolt==1.18.1
 trafilatura==1.9.0
