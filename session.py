@@ -61,7 +61,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = TextModel.CLAUDE_35_SONNET
+        self.model = TextModel.O1_PREVIEW
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -220,6 +220,9 @@ class ChatSession:
             say(text="Session has been reset.")
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
             say(text=f"You are currently chatting with {self.model.value}.")
+        elif cmd in ["\\o1", "\\o1-preview"]:
+            self.model = TextModel.O1_PREVIEW
+            say(text="Model set to O1 Preview.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
             say(text="Model set to GPT-4o (Omni).")
@@ -244,7 +247,7 @@ class ChatSession:
         elif cmd == "\\opus":
             self.model = TextModel.CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
-        elif cmd == "\\sonnet":
+        elif cmd in ["\\sonnet", "\\claude"]:
             self.model = TextModel.CLAUDE_35_SONNET
             say(text="Model set to Claude 3.5 Sonnet.")
         elif cmd == "\\haiku":
@@ -270,6 +273,7 @@ class ChatSession:
 {HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
+- \\o1: Use O1 Preview for future messages. Preserves the session so far.\n
 - \\gpt4o: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
 - \\mini: Use GPT-4o Mini for future messages. Preserves the session so far.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
@@ -305,7 +309,11 @@ class ChatSession:
         elif commands:
             self.process_command(commands[-1])
 
-        messages = [ChatMessage.from_system(self.system_instr)] + messages
+        messages = (
+            [ChatMessage.from_system(self.system_instr)] + messages
+            if self.model != TextModel.O1_PREVIEW
+            else [ChatMessage.from_user(self.system_instr)] + messages
+        )
         messages = [msg.to_openai_format() for msg in messages]
         logger.debug(messages)
 
