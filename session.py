@@ -1,3 +1,4 @@
+from multiprocessing import process
 import os
 import time
 from typing import Any
@@ -50,6 +51,15 @@ def check_mimetype(url) -> str:
         return response.headers.get("Content-Type", "unknown")
     except requests.exceptions.RequestException:
         return "unknown"
+
+
+def extract(text):
+    if is_youtube_video(text):
+        logger.debug(f"Fetching youtube transcript for [{text}].")
+        return yt_transcript(text)
+    else:
+        logger.debug(f"Reading text from [{text}].")
+        return scrape_text(text)
 
 
 class ChatSession:
@@ -270,6 +280,8 @@ class ChatSession:
         elif cmd == "\\nostream":
             self.streaming_mode = False
             say(text="Streaming mode disabled.")
+        elif cmd.startswith("\\extract "):
+            say(text=extract(cmd[8:].strip()))
         elif cmd == "\\help":
             say(
                 f"""
@@ -284,6 +296,7 @@ class ChatSession:
 - \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
 - \\flash: Use Gemini 1.5 Flash for future messages. Preserves the session so far.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
+- \\extract: [debug] Extract text from a URL or a YT video.\n
                 """
             )
         else:
