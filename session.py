@@ -57,9 +57,8 @@ def extract(text):
     if is_youtube_video(text):
         logger.debug(f"Fetching youtube transcript for [{text}].")
         return yt_transcript(text)
-    else:
-        logger.debug(f"Reading text from [{text}].")
-        return scrape_text(text)
+    logger.debug(f"Reading text from [{text}].")
+    return scrape_text(text)
 
 
 class ChatSession:
@@ -288,7 +287,7 @@ class ChatSession:
             say(text="Streaming mode disabled.")
         elif cmd.startswith("\\extract "):
             if say:
-                say(text=extract(cmd[8:].strip()))
+                say(text=(extract(cmd[8:].strip()) or "None"))
         elif cmd == "\\help":
             say(
                 f"""
