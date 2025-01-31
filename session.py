@@ -1,4 +1,5 @@
 from multiprocessing import process
+import re
 import os
 import time
 from typing import Any
@@ -54,11 +55,15 @@ def check_mimetype(url) -> str:
 
 
 def extract(text):
-    if is_youtube_video(text):
-        logger.debug(f"Fetching youtube transcript for [{text}].")
-        return yt_transcript(text)
-    logger.debug(f"Reading text from [{text}].")
-    return scrape_text(text)
+    url = text.strip()
+    match = re.search(r"\[<([^|>]+)\|[^>]+>\]", url)
+    if match:
+        url = match.group(1)
+    if is_youtube_video(url):
+        logger.debug(f"Fetching youtube transcript for [{url}].")
+        return yt_transcript(url) or f"Failed to extract transcript for {url}."
+    logger.debug(f"Reading text from [{url}].")
+    return scrape_text(url) or f"Failed to scrape text from {url}."
 
 
 class ChatSession:
@@ -287,7 +292,7 @@ class ChatSession:
             say(text="Streaming mode disabled.")
         elif cmd.startswith("\\extract "):
             if say:
-                say(text=(extract(cmd[8:].strip()) or "None"))
+                say(text=(extract(cmd[8:]) or "None"))
         elif cmd == "\\help":
             say(
                 f"""
