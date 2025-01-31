@@ -281,7 +281,8 @@ class ChatSession:
             self.streaming_mode = False
             say(text="Streaming mode disabled.")
         elif cmd.startswith("\\extract "):
-            say(text=extract(cmd[8:].strip()))
+            if say:
+                say(text=extract(cmd[8:].strip()))
         elif cmd == "\\help":
             say(
                 f"""
