@@ -230,9 +230,9 @@ class ChatSession:
             say(text="Session has been reset.")
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
             say(text=f"You are currently chatting with {self.model.value}.")
-        elif cmd in ["\\o1", "\\o1-preview"]:
-            self.model = TextModel.O1_PREVIEW
-            say(text="Model set to O1 Preview.")
+        elif cmd == "\\o1":
+            self.model = TextModel.O1
+            say(text="Model set to O1.")
         elif cmd in ["\\o1-mini", "\\o1mini", "\\mini"]:
             self.model = TextModel.O1_MINI
             say(text="Model set to O1 Mini.")
@@ -264,14 +264,20 @@ class ChatSession:
             self.model = TextModel.CLAUDE_35_SONNET
             say(text="Model set to Claude 3.5 Sonnet.")
         elif cmd == "\\haiku":
-            self.model = TextModel.CLAUDE_3_HAIKU
-            say(text="Model set to Claude 3 Haiku.")
+            self.model = TextModel.CLAUDE_35_HAIKU
+            say(text="Model set to Claude 3.5 Haiku.")
         elif cmd == "\\gemini":
-            self.model = TextModel.GEMINI_15_PRO
-            say(text="Model set to Gemini 1.5 Pro.")
+            self.model = TextModel.GEMINI_2_PRO
+            say(text="Model set to Gemini 2.0 Pro.")
         elif cmd == "\\flash":
-            self.model = TextModel.GEMINI_15_FLASH
-            say(text="Model set to Gemini 1.5 Flash.")
+            self.model = TextModel.GEMINI_2_FLASH
+            say(text="Model set to Gemini 2.0 Flash.")
+        elif cmd == "\\flash-thinking":
+            self.model = TextModel.GEMINI_FLASH_THINKING
+            say(text="Model set to Gemini 2.0 Flash Thinking.")
+        elif cmd == "\\deepseek":
+            self.model = TextModel.DEEPSEEK_R1
+            say(text="Model set to Deepseek R1.")
         elif cmd == "\\stream":
             self.streaming_mode ^= True
             say(
@@ -286,16 +292,18 @@ class ChatSession:
         elif cmd == "\\help":
             say(
                 f"""
-{HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Here's the full list of available commands you can use:\n
+{HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
-- \\o1: Use O1 Preview for future messages. Preserves the session so far.\n
-- \\o1mini: Use O1 Mini for future messages. Preserves the session so far.\n
-- \\gpt4o: Use GPT-4o (Omni) for future messages. Preserves the session so far.\n
-- \\sonnet: Use Claude 3.5 Sonnet for future messages. Preserves the session so far.\n
-- \\llama: Use LLaMA-3.1 405B for future messages. Preserves the session so far.\n
-- \\gemini: Use Gemini 1.5 Pro for future messages. Preserves the session so far.\n
-- \\flash: Use Gemini 1.5 Flash for future messages. Preserves the session so far.\n
+- \\o1: Use O1 for future messages.\n
+- \\o1mini: Use O1 Mini for future messages.\n
+- \\gpt4o: Use GPT-4o (Omni) for future messages.\n
+- \\sonnet: Use Claude 3.5 Sonnet for future messages.\n
+- \\llama: Use LLaMA-3.1 405B for future messages.\n
+- \\gemini: Use Gemini 2.0 Pro for future messages.\n
+- \\flash: Use Gemini 2.0 Flash for future messages.\n
+- \\flash-thinking: Use Gemini 2.0 Flash Thinking for future messages.\n
+- \\deepseek: Use Deepseek R1 for future messages.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
                 """
