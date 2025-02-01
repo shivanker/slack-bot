@@ -62,7 +62,7 @@ def handle_message(body, say, logger):
 
     try:
         user_session = ChatSession(user_id, channel_id, thread_ts, client)
-        user_session.process_direct_message(text, say, logger)
+        user_session.process_direct_message(text, logger)
     except Exception as e:
         say(ERROR_HEADER + "\n```\n" + str(e) + "\n```\n")
         traceback.print_exc()

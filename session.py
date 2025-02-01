@@ -90,7 +90,9 @@ class ChatSession:
             # websites to fetch real, up-to-date data, and then root your answers to those facts."
             "Here goes the chat history so far and the latest activity..."
         )
-        self.say = None
+        self.say = lambda text: self.client.chat_postMessage(
+            channel=self.channel_id, thread_ts=self.thread_ts, text=text
+        )
 
     def fetch_conversation_history(self) -> tuple[list[ChatMessage], list[str]]:
         try:
@@ -320,15 +322,8 @@ class ChatSession:
             return False
         return True
 
-    def process_direct_message(self, text, say, logger):
-        self.say = say
-
+    def process_direct_message(self, text, logger):
         messages, commands = self.fetch_conversation_history()
-        if len(messages) < 2 and len(commands) == 0 and not self.is_command(text):
-            say(
-                HELP_PREAMBLE
-                + ' At any time, enter "\\help" for a list of commands. Response to your first message will follow now.'
-            )
 
         # Re-run previous commands in session
         for cmd in commands[:-1]:
@@ -336,23 +331,24 @@ class ChatSession:
 
         # Run the latest command, responding if it's the current message
         if self.is_command(text):
-            if self.process_command(text, say):
+            if self.process_command(text, self.say):
                 return  # Don't return if command processing failed. Let's process it like a text
         elif commands:
             self.process_command(commands[-1])
 
         messages = (
-            [ChatMessage.from_system(self.system_instr)] + messages
-            if not self.model.value.startswith("o1")
-            else [ChatMessage.from_user(self.system_instr)] + messages
+            # [ChatMessage.from_system(self.system_instr)] + messages
+            # if not self.model.value.startswith("o1")
+            # else 
+            [ChatMessage.from_user(self.system_instr)] + messages
         )
         messages = [msg.to_openai_format() for msg in messages]
         logger.debug(messages)
 
         # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode or self.model.value.startswith("o1"):
+        if not self.streaming_mode:
             response = completion(model=self.model.value, messages=messages)
-            say(text=response.choices[0].message.content)  # type: ignore
+            self.say(text=response.choices[0].message.content)  # type: ignore
             return
 
         response = completion(model=self.model.value, messages=messages, stream=True)
