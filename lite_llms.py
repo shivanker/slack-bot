@@ -7,7 +7,7 @@ class TextModel(Enum):
     GPT_4O_MINI = "gpt-4o-mini"
     GPT_4_TURBO = "gpt-4-turbo"
     O1 = "o1"
-    O1_MINI = "o1-mini"
+    O3_MINI = "o3-mini"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
     CLAUDE_35_SONNET = "claude-3-5-sonnet-20241022"
     CLAUDE_35_HAIKU = "claude-3-5-haiku-20241022"

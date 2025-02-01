@@ -60,10 +60,10 @@ def extract(text):
     if match:
         url = match.group(1)
     if is_youtube_video(url):
-        logger.debug(f"Fetching youtube transcript for [{url}].")
-        return yt_transcript(url) or f"Failed to extract transcript for {url}."
-    logger.debug(f"Reading text from [{url}].")
-    return scrape_text(url) or f"Failed to scrape text from {url}."
+        logger.info(f"Fetching youtube transcript for {url}. Original text {text}")
+        return yt_transcript(url) or f"Failed to extract transcript for {url}. Original text {text}"
+    logger.info(f"Reading text from [{url}]. Original text {text}")
+    return scrape_text(url) or f"Failed to scrape text from {url}. Original text {text}"
 
 
 class ChatSession:
@@ -237,8 +237,8 @@ class ChatSession:
         elif cmd == "\\o1":
             self.model = TextModel.O1
             say(text="Model set to O1.")
-        elif cmd in ["\\o1-mini", "\\o1mini", "\\mini"]:
-            self.model = TextModel.O1_MINI
+        elif cmd in ["\\o3-mini", "\\o3mini", "\\mini"]:
+            self.model = TextModel.O3_MINI
             say(text="Model set to O1 Mini.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
@@ -300,7 +300,7 @@ class ChatSession:
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
 - \\o1: Use O1 for future messages.\n
-- \\o1mini: Use O1 Mini for future messages.\n
+- \\o3mini: Use O1 Mini for future messages.\n
 - \\gpt4o: Use GPT-4o (Omni) for future messages.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
