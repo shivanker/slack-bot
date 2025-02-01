@@ -206,7 +206,6 @@ class ChatSession:
                             else ChatMessage.from_assistant(msg)
                         )
 
-            history = list(reversed(history))
             # Ensure first message is from user
             if history and not history[0].is_from(ChatRole.USER):
                 history = [ChatMessage.from_user("...")] + history
@@ -221,7 +220,7 @@ class ChatSession:
                     merged_messages.append(chatmsg)
                     prev_role = chatmsg.role
             logger.debug(f"<history>\n{merged_messages}</history>")
-            return (merged_messages, list(reversed(commands)))
+            return (merged_messages, commands)
 
         except Exception as e:
             logger.error(f"Error processing conversation: {str(e)}")
