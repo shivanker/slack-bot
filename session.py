@@ -56,7 +56,7 @@ def check_mimetype(url) -> str:
 
 def extract(text):
     url = text.strip()
-    match = re.search(r"\[<?(https?:[^|>]+)\|[^>]+>?\]", url)
+    match = re.search(r"\[<?(https?:[^|>]+)\|?[^|>]+>?\]", url)
     if match:
         url = match.group(1)
     if is_youtube_video(url):
