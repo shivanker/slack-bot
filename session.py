@@ -243,7 +243,7 @@ class ChatSession:
             say(text="Model set to O1.")
         elif cmd in ["\\o3-mini", "\\o3mini", "\\mini"]:
             self.model = TextModel.O3_MINI
-            say(text="Model set to O1 Mini.")
+            say(text="Model set to O3 Mini.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
             say(text="Model set to GPT-4o (Omni).")
@@ -304,7 +304,7 @@ class ChatSession:
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
 - \\o1: Use O1 for future messages.\n
-- \\o3mini: Use O1 Mini for future messages.\n
+- \\o3mini: Use O3 Mini for future messages.\n
 - \\gpt4o: Use GPT-4o (Omni) for future messages.\n
 - \\sonnet: Use Claude 3.5 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
