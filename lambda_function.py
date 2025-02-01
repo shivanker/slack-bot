@@ -52,6 +52,7 @@ def handle_message(body, say, logger):
     channel_id = event.get("channel") or ""
     user_id = event["user"]
     text = event.get("text") or ""
+    thread_ts = event.get("thread_ts") or event.get("ts")
 
     # Check if the message was sent by the user and not this app
     bot_user_id = slack_app.client.auth_test()["user_id"]
@@ -60,7 +61,7 @@ def handle_message(body, say, logger):
         return
 
     try:
-        user_session = ChatSession(user_id, channel_id, client)
+        user_session = ChatSession(user_id, channel_id, thread_ts, client)
         user_session.process_direct_message(text, say, logger)
     except Exception as e:
         say(ERROR_HEADER + "\n```\n" + str(e) + "\n```\n")

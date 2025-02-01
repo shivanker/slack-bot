@@ -61,15 +61,18 @@ def extract(text):
         url = match.group(1)
     if is_youtube_video(url):
         logger.info(f"Fetching youtube transcript for {url}. Original text {text}")
-        return yt_transcript(url) or f"Failed to extract transcript for {url}. Original text {text}"
+        return yt_transcript(url) or f"Failed to extract transcript for {url}."
     logger.info(f"Reading text from [{url}]. Original text {text}")
-    return scrape_text(url) or f"Failed to scrape text from {url}. Original text {text}"
+    return scrape_text(url) or f"Failed to scrape text from {url}."
 
 
 class ChatSession:
-    def __init__(self, user_id: str, channel_id: str, client: WebClient):
+    def __init__(
+        self, user_id: str, channel_id: str, thread_ts: str, client: WebClient
+    ):
         self.user_id = user_id
         self.channel_id = channel_id
+        self.thread_ts = thread_ts
         self.client = client
         self.streaming_mode = True
         # Retrieve the sender's information using the Slack API
@@ -91,8 +94,8 @@ class ChatSession:
 
     def fetch_conversation_history(self) -> tuple[list[ChatMessage], list[str]]:
         try:
-            conversation_history = self.client.conversations_history(
-                channel=self.channel_id, limit=50
+            conversation_history = self.client.conversations_replies(
+                channel=self.channel_id, ts=self.thread_ts, limit=100, inclusive=True
             )
         except Exception as e:
             logger.error(f"Error fetching conversation history: {str(e)}")
@@ -354,7 +357,9 @@ class ChatSession:
 
         response = completion(model=self.model.value, messages=messages, stream=True)
         initial_message = self.client.chat_postMessage(
-            channel=self.channel_id, text=f"[[ {self.model.value} ]] Thinking ..."
+            channel=self.channel_id,
+            thread_ts=self.thread_ts,
+            text=f"[[ {self.model.value} ]] Thinking ...",
         )["ts"]
         last_update_time = time.time()
         update_interval = 1  # Start with 1 second interval
@@ -390,6 +395,7 @@ class ChatSession:
                     # Start a new message with just the new content
                     message_ts = self.client.chat_postMessage(
                         channel=self.channel_id,
+                        thread_ts=self.thread_ts,
                         text=f"... [[ {self.model.value} thinking ]] ...",
                     )["ts"]
                     current_message = ""
