@@ -45,21 +45,32 @@ def extract_video_id(url):
 
 def yt_transcript(url: str) -> Union[str, None]:
     """Function to fetch the transcript of a YouTube video, given the URL."""
+    logger.warning(f"SHIV1 Fetching youtube transcript for {url}")
     cached_transcript = s3_cache.get_cache(CACHE_NAMESPACE, url)
     if cached_transcript:
+        logger.warning(f"SHIV1 Found cached transcript for {url}")
         return cached_transcript
     try:
+        logger.warning(f"SHIV1 Extracting video id for {url}")
         video_id = extract_video_id(url)
         if video_id:
+            logger.warning(f"SHIV1 Found video id {video_id} for {url}")
             transcript = YouTubeTranscriptApi.get_transcript(video_id)
             if transcript:
+                logger.warning(
+                    f"SHIV1 Found transcript for {url}, beginning with {transcript[:50]}"
+                )
                 transcript = " ".join(
                     f"[{segment['start']:.2f}] {segment['text']}"
                     for segment in transcript
                 )
                 s3_cache.set_cache(CACHE_NAMESPACE, url, transcript)
                 return transcript
+            else:
+                logger.warning(f"SHIV1 No transcript found for {url}")
+        else:
+            logger.warning(f"SHIV1 No video id found for {url}")
     except Exception as e:
-        logger.error(f"Failed to extract transcript for [{url}].")
+        logger.error(f"SHIV1 Failed to extract transcript for {url}." + str(e))
         return None
     return "<empty>"

@@ -60,7 +60,9 @@ def extract(text):
     if match:
         url = match.group(1)
     if is_youtube_video(url):
-        logger.info(f"Fetching youtube transcript for {url}. Original text {text}")
+        logger.warning(
+            f"SHIV1 Fetching youtube transcript for {url}. Original text {text}"
+        )
         return yt_transcript(url) or f"Failed to extract transcript for {url}."
     logger.info(f"Reading text from [{url}]. Original text {text}")
     return scrape_text(url) or f"Failed to scrape text from {url}."
@@ -338,8 +340,9 @@ class ChatSession:
         messages = (
             # [ChatMessage.from_system(self.system_instr)] + messages
             # if not self.model.value.startswith("o1")
-            # else 
-            [ChatMessage.from_user(self.system_instr)] + messages
+            # else
+            [ChatMessage.from_user(self.system_instr)]
+            + messages
         )
         messages = [msg.to_openai_format() for msg in messages]
         logger.debug(messages)
