@@ -71,6 +71,10 @@ def yt_transcript(url: str) -> Union[str, None]:
         else:
             logger.warning(f"SHIV1 No video id found for {url}")
     except Exception as e:
-        logger.error(f"SHIV1 Failed to extract transcript for {url}." + str(e))
+        logger.exception(
+            f"SHIV1 Failed to extract transcript for {url}." + str(e),
+            stack_info=True,
+        )
+        # logger.error(f"SHIV1 Failed to extract transcript for {url}." + str(e))
         return None
     return "<empty>"
