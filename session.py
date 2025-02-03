@@ -60,9 +60,7 @@ def extract(text):
     if match:
         url = match.group(1)
     if is_youtube_video(url):
-        logger.warning(
-            f"SHIV1 Fetching youtube transcript for {url}. Original text {text}"
-        )
+        logger.warning(f"Fetching youtube transcript for {url}. Original text {text}")
         return yt_transcript(url) or f"Failed to extract transcript for {url}."
     logger.info(f"Reading text from [{url}]. Original text {text}")
     return scrape_text(url) or f"Failed to scrape text from {url}."
