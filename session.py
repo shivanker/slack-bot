@@ -344,14 +344,24 @@ class ChatSession:
         )
         messages = [msg.to_openai_format() for msg in messages]
         logger.debug(messages)
+        extra_completion_params = {}
+        if self.model.value.startswith("o"):
+            extra_completion_params["reasoning_effort"] = "high"
 
         # Process the user's message using the selected model and conversation history
         if not self.streaming_mode:
-            response = completion(model=self.model.value, messages=messages)
+            response = completion(
+                model=self.model.value, messages=messages, **extra_completion_params
+            )
             self.say(text=response.choices[0].message.content)  # type: ignore
             return
 
-        response = completion(model=self.model.value, messages=messages, stream=True)
+        response = completion(
+            model=self.model.value,
+            messages=messages,
+            stream=True,
+            **extra_completion_params,
+        )
         initial_message = self.client.chat_postMessage(
             channel=self.channel_id,
             thread_ts=self.thread_ts,
