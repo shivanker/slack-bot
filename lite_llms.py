@@ -9,7 +9,7 @@ class TextModel(Enum):
     O1 = "o1"
     O3_MINI = "o3-mini"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
-    CLAUDE_35_SONNET = "claude-3-5-sonnet-20241022"
+    CLAUDE_37_SONNET = "claude-3-7-sonnet-20250219"
     CLAUDE_35_HAIKU = "claude-3-5-haiku-20241022"
     GEMINI_2_PRO = "gemini/gemini-exp-1206"
     GEMINI_2_FLASH = "gemini/gemini-2.0-flash-exp"

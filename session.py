@@ -78,7 +78,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = TextModel.CLAUDE_35_SONNET
+        self.model = TextModel.CLAUDE_37_SONNET
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -269,8 +269,8 @@ class ChatSession:
             self.model = TextModel.CLAUDE_3_OPUS
             say(text="Model set to Claude 3 Opus.")
         elif cmd in ["\\sonnet", "\\claude"]:
-            self.model = TextModel.CLAUDE_35_SONNET
-            say(text="Model set to Claude 3.5 Sonnet.")
+            self.model = TextModel.CLAUDE_37_SONNET
+            say(text="Model set to Claude 3.7 Sonnet.")
         elif cmd == "\\haiku":
             self.model = TextModel.CLAUDE_35_HAIKU
             say(text="Model set to Claude 3.5 Haiku.")
@@ -306,7 +306,7 @@ class ChatSession:
 - \\o1: Use O1 for future messages.\n
 - \\o3mini: Use O3 Mini for future messages.\n
 - \\gpt4o: Use GPT-4o (Omni) for future messages.\n
-- \\sonnet: Use Claude 3.5 Sonnet for future messages.\n
+- \\sonnet: Use Claude 3.7 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
 - \\gemini: Use Gemini 2.0 Pro for future messages.\n
 - \\flash: Use Gemini 2.0 Flash for future messages.\n
