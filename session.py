@@ -348,7 +348,7 @@ class ChatSession:
 
         return chunks
 
-    def process_direct_message(self, text, logger):
+    def process_direct_message(self, text: str, logger: Any) -> None:
         messages, commands = self.fetch_conversation_history()
 
         # Re-run previous commands in session
@@ -369,13 +369,16 @@ class ChatSession:
             [ChatMessage.from_user(self.system_instr)]
             + messages
         )
-        messages = [msg.to_openai_format() for msg in messages]
+        messages = [msg.to_openai_format() for msg in messages] # type: ignore
         logger.debug(messages)
-        extra_completion_params = {}
+        extra_completion_params: dict[str, Any] = {
+            "max_tokens": 32000,
+        }
         if self.model.value.startswith("o"):
             extra_completion_params["reasoning_effort"] = "high"
         elif self.model == TextModel.CLAUDE_37_SONNET:
-            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 64000}
+            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 32000}
+            extra_completion_params["max_tokens"] = 64000
 
 
         # Process the user's message using the selected model and conversation history
@@ -402,7 +405,7 @@ class ChatSession:
             text=f"[[ {self.model.value} ]] Thinking ...",
         )["ts"]
         last_update_time = time.time()
-        update_interval = 1  # Start with 1 second interval
+        update_interval = 1.0  # Start with 1 second interval
         start_time = time.time()
         current_message = ""
         message_ts = initial_message
