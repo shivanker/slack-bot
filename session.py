@@ -327,12 +327,12 @@ class ChatSession:
         chunks = []
         i = 0
         while i < len(text):
-            chunk = text[i:i + max_size]
+            chunk = text[i : i + max_size]
 
             # If this isn't the last chunk, try to break at a natural boundary
             if i + max_size < len(text):
-                last_newline = chunk.rfind('\n')
-                last_space = chunk.rfind(' ')
+                last_newline = chunk.rfind("\n")
+                last_space = chunk.rfind(" ")
                 # Prefer breaking at newlines, fall back to spaces
                 break_at = last_newline if last_newline != -1 else last_space
                 if break_at != -1:
@@ -369,26 +369,32 @@ class ChatSession:
             [ChatMessage.from_user(self.system_instr)]
             + messages
         )
-        messages = [msg.to_openai_format() for msg in messages] # type: ignore
+        messages = [msg.to_openai_format() for msg in messages]  # type: ignore
         logger.debug(messages)
         extra_completion_params: dict[str, Any] = {
-            "max_tokens": 32000,
+            "max_tokens": 128000,
         }
         if self.model.value.startswith("o"):
             extra_completion_params["reasoning_effort"] = "high"
         elif self.model == TextModel.CLAUDE_37_SONNET:
-            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 32000}
-            extra_completion_params["max_tokens"] = 64000
+            extra_completion_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": 32000,
+            }
             extra_completion_params["max_completion_tokens"] = 64000
-
 
         # Process the user's message using the selected model and conversation history
         if not self.streaming_mode:
             response = completion(
                 model=self.model.value, messages=messages, **extra_completion_params
             )
+            reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
             full_text: str = response.choices[0].message.content  # type: ignore
 
+            if reasoning_content:
+                full_text = (
+                    f"<thinking>\n{reasoning_content}\n</thinking>\n\n{full_text}"
+                )
             # Send response in chunks
             for chunk in self.break_message(full_text):
                 self.say(text=chunk)
@@ -409,11 +415,20 @@ class ChatSession:
         update_interval = 1.0  # Start with 1 second interval
         start_time = time.time()
         current_message = ""
+        thinking = False
         message_ts = initial_message
 
         for chunk in response:
-            last_chunk = chunk.choices[0].delta.content or ""  # type: ignore
-            current_message += last_chunk
+            last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
+            last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
+            if not thinking and len(last_reasoning_chunk) > 0:
+                thinking = True
+                last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
+            if thinking and len(last_reasoning_chunk) == 0:
+                thinking = False
+                last_reasoning_chunk = f"{last_reasoning_chunk}\n</thinking>\n\n"
+
+            current_message += last_reasoning_chunk + last_chunk
             current_time = time.time()
 
             # Check if it's time to send an update or start a new message
