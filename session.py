@@ -75,6 +75,7 @@ class ChatSession:
         self.thread_ts = thread_ts
         self.client = client
         self.streaming_mode = True
+        self.show_thoughts = True
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
@@ -294,6 +295,14 @@ class ChatSession:
         elif cmd == "\\nostream":
             self.streaming_mode = False
             say(text="Streaming mode disabled.")
+        elif cmd == "\\thoughts":
+            self.show_thoughts ^= True
+            say(
+                text=f'Displaying thoughts {"enabled" if self.show_thoughts else "disabled"}.'
+            )
+        elif cmd == "\\nothoughts":
+            self.show_thoughts = False
+            say(text="Displaying thoughts disabled.")
         elif cmd.startswith("\\extract "):
             if say:
                 say(text=(extract(cmd[8:]) or "None"))
@@ -391,6 +400,9 @@ class ChatSession:
             reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
             full_text: str = response.choices[0].message.content  # type: ignore
 
+            if not self.show_thoughts:
+                reasoning_content = ""
+
             if reasoning_content:
                 reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
                 for chunk in self.break_message(reasoning_content):
@@ -421,6 +433,8 @@ class ChatSession:
         for chunk in response:
             last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
             last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
+            if not self.show_thoughts:
+                last_reasoning_chunk = ""
             if not thinking and len(last_reasoning_chunk) > 0:
                 thinking = True
                 last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
