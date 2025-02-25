@@ -379,6 +379,7 @@ class ChatSession:
         elif self.model == TextModel.CLAUDE_37_SONNET:
             extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 32000}
             extra_completion_params["max_tokens"] = 64000
+            extra_completion_params["max_completion_tokens"] = 64000
 
 
         # Process the user's message using the selected model and conversation history
