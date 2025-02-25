@@ -392,9 +392,9 @@ class ChatSession:
             full_text: str = response.choices[0].message.content  # type: ignore
 
             if reasoning_content:
-                full_text = (
-                    f"<thinking>\n{reasoning_content}\n</thinking>\n\n{full_text}"
-                )
+                reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
+                for chunk in self.break_message(reasoning_content):
+                    self.say(text=chunk)
             # Send response in chunks
             for chunk in self.break_message(full_text):
                 self.say(text=chunk)
@@ -427,6 +427,19 @@ class ChatSession:
             if thinking and len(last_reasoning_chunk) == 0:
                 thinking = False
                 last_reasoning_chunk = f"{last_reasoning_chunk}\n</thinking>\n\n"
+                self.client.chat_update(
+                    channel=self.channel_id,
+                    ts=message_ts,
+                    text=last_reasoning_chunk,
+                )
+                # Start a new message for post-thinking response
+                message_ts = self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    thread_ts=self.thread_ts,
+                    text=f"... [[ {self.model.value} generating response ]] ...",
+                )["ts"]
+                current_message = ""
+                last_reasoning_chunk = ""
 
             current_message += last_reasoning_chunk + last_chunk
             current_time = time.time()
