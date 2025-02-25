@@ -1,7 +1,7 @@
 aws_lambda_powertools==3.5.0
 google-generativeai==0.8.4
 grpcio-status==1.70.0
-litellm==1.60.2
+litellm==1.61.16
 lxml_html_clean==0.4.1
 pdfminer.six==20240706
 slack_bolt==1.22.0

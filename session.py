@@ -321,6 +321,33 @@ class ChatSession:
             return False
         return True
 
+    def break_message(self, text: str, max_size: int = 2400) -> list[str]:
+        """Split text into chunks of approximately max_size characters, preserving whitespace.
+        Attempts to break at newlines first, then spaces if necessary."""
+        chunks = []
+        i = 0
+        while i < len(text):
+            chunk = text[i:i + max_size]
+
+            # If this isn't the last chunk, try to break at a natural boundary
+            if i + max_size < len(text):
+                last_newline = chunk.rfind('\n')
+                last_space = chunk.rfind(' ')
+                # Prefer breaking at newlines, fall back to spaces
+                break_at = last_newline if last_newline != -1 else last_space
+                if break_at != -1:
+                    chunk = chunk[:break_at]
+                    i = i + break_at  # Adjust the next starting point
+                else:
+                    i = i + max_size
+            else:
+                i = i + max_size
+
+            if chunk.strip():  # Only include non-empty chunks
+                chunks.append(chunk)
+
+        return chunks
+
     def process_direct_message(self, text, logger):
         messages, commands = self.fetch_conversation_history()
 
@@ -347,13 +374,20 @@ class ChatSession:
         extra_completion_params = {}
         if self.model.value.startswith("o"):
             extra_completion_params["reasoning_effort"] = "high"
+        elif self.model == TextModel.CLAUDE_37_SONNET:
+            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 64000},
+
 
         # Process the user's message using the selected model and conversation history
         if not self.streaming_mode:
             response = completion(
                 model=self.model.value, messages=messages, **extra_completion_params
             )
-            self.say(text=response.choices[0].message.content)  # type: ignore
+            full_text: str = response.choices[0].message.content  # type: ignore
+
+            # Send response in chunks
+            for chunk in self.break_message(full_text):
+                self.say(text=chunk)
             return
 
         response = completion(
@@ -370,29 +404,22 @@ class ChatSession:
         last_update_time = time.time()
         update_interval = 1  # Start with 1 second interval
         start_time = time.time()
-        full_response = ""
         current_message = ""
         message_ts = initial_message
 
-        for part in response:
-            last_chunk = part.choices[0].delta.content or ""  # type: ignore
-            full_response += last_chunk
+        for chunk in response:
+            last_chunk = chunk.choices[0].delta.content or ""  # type: ignore
             current_message += last_chunk
             current_time = time.time()
 
             # Check if it's time to send an update or start a new message
             if (
                 current_time - last_update_time >= update_interval
-                or len((current_message).split()) > 320
-                or len((current_message)) > 2400
+                or len(current_message) > 2400
             ):
-                # Update existing message
-                self.client.chat_update(
-                    channel=self.channel_id,
-                    ts=message_ts,
-                    text=f"{current_message} ... [[ {self.model.value} thinking ]] ...",
-                )
-                if len(current_message.split()) > 320 or len(current_message) > 2400:
+                # TODO: Not sure if we can have a single big chunk and need to use break_message here
+                last_update_time = current_time
+                if len(current_message) > 2400:
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
@@ -405,7 +432,13 @@ class ChatSession:
                         text=f"... [[ {self.model.value} thinking ]] ...",
                     )["ts"]
                     current_message = ""
-                last_update_time = current_time
+                else:
+                    # Update existing message
+                    self.client.chat_update(
+                        channel=self.channel_id,
+                        ts=message_ts,
+                        text=f"{current_message} ... [[ {self.model.value} thinking ]] ...",
+                    )
 
             # Adjust the update interval if the process takes more than 30 seconds
             if current_time - start_time > 30:
