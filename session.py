@@ -426,11 +426,10 @@ class ChatSession:
                 last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
             if thinking and len(last_reasoning_chunk) == 0:
                 thinking = False
-                last_reasoning_chunk = f"{last_reasoning_chunk}\n</thinking>\n\n"
                 self.client.chat_update(
                     channel=self.channel_id,
                     ts=message_ts,
-                    text=last_reasoning_chunk,
+                    text=f"{current_message}\n</thinking>\n\n",
                 )
                 # Start a new message for post-thinking response
                 message_ts = self.client.chat_postMessage(
@@ -439,7 +438,6 @@ class ChatSession:
                     text=f"... [[ {self.model.value} generating response ]] ...",
                 )["ts"]
                 current_message = ""
-                last_reasoning_chunk = ""
 
             current_message += last_reasoning_chunk + last_chunk
             current_time = time.time()
