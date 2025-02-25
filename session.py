@@ -375,7 +375,7 @@ class ChatSession:
         if self.model.value.startswith("o"):
             extra_completion_params["reasoning_effort"] = "high"
         elif self.model == TextModel.CLAUDE_37_SONNET:
-            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 64000},
+            extra_completion_params["thinking"] = {"type": "enabled", "budget_tokens": 64000}
 
 
         # Process the user's message using the selected model and conversation history
