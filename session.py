@@ -79,7 +79,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = TextModel.CLAUDE_37_SONNET
+        self.model = TextModel.GEMINI_25
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -276,14 +276,8 @@ class ChatSession:
             self.model = TextModel.CLAUDE_35_HAIKU
             say(text="Model set to Claude 3.5 Haiku.")
         elif cmd == "\\gemini":
-            self.model = TextModel.GEMINI_2_PRO
-            say(text="Model set to Gemini 2.0 Pro.")
-        elif cmd == "\\flash":
-            self.model = TextModel.GEMINI_2_FLASH
-            say(text="Model set to Gemini 2.0 Flash.")
-        elif cmd == "\\flash-thinking":
-            self.model = TextModel.GEMINI_FLASH_THINKING
-            say(text="Model set to Gemini 2.0 Flash Thinking.")
+            self.model = TextModel.GEMINI_25
+            say(text="Model set to Gemini 2.5 Pro.")
         elif cmd == "\\deepseek":
             self.model = TextModel.DEEPSEEK_R1
             say(text="Model set to Deepseek R1.")
@@ -317,12 +311,11 @@ class ChatSession:
 - \\gpt4o: Use GPT-4o (Omni) for future messages.\n
 - \\sonnet: Use Claude 3.7 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
-- \\gemini: Use Gemini 2.0 Pro for future messages.\n
-- \\flash: Use Gemini 2.0 Flash for future messages.\n
-- \\flash-thinking: Use Gemini 2.0 Flash Thinking for future messages.\n
+- \\gemini: Use Gemini 2.5 Pro for future messages.\n
 - \\deepseek: Use Deepseek R1 for future messages.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
+- \\thoughts: Toggle thoughts display. When enabled, thoughts will be shared.\n
                 """
             )
         else:
