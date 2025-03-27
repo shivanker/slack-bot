@@ -75,7 +75,7 @@ class ChatSession:
         self.thread_ts = thread_ts
         self.client = client
         self.streaming_mode = True
-        self.show_thoughts = True
+        self.show_thoughts = False
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
