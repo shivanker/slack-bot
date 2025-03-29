@@ -357,15 +357,15 @@ class ChatSession:
         elif commands:
             self.process_command(commands[-1])
 
-        messages = (
+        messages_with_instr = (
             # [ChatMessage.from_system(self.system_instr)] + messages
             # if not self.model.value.startswith("o1")
             # else
             [ChatMessage.from_user(self.system_instr)]
             + messages
         )
-        messages = [msg.to_openai_format() for msg in messages]  # type: ignore
-        logger.debug(messages)
+        messages_with_instr = [msg.to_openai_format() for msg in messages_with_instr]  # type: ignore
+        logger.debug(messages_with_instr)
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
@@ -378,10 +378,17 @@ class ChatSession:
             }
             extra_completion_params["max_completion_tokens"] = 64000
 
+        self.client.assistant_threads_setStatus(
+            channel_id=self.channel_id,
+            thread_ts=self.thread_ts,
+            status=f"{self.model.value} is generating ...",
+        )
         # Process the user's message using the selected model and conversation history
         if not self.streaming_mode:
             response = completion(
-                model=self.model.value, messages=messages, **extra_completion_params
+                model=self.model.value,
+                messages=messages_with_instr,
+                **extra_completion_params,
             )
             reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
             full_text: str = response.choices[0].message.content  # type: ignore
@@ -400,7 +407,7 @@ class ChatSession:
 
         response = completion(
             model=self.model.value,
-            messages=messages,
+            messages=messages_with_instr,
             stream=True,
             **extra_completion_params,
         )
@@ -410,22 +417,34 @@ class ChatSession:
             text=f"[[ {self.model.value} ]] Thinking ...",
         )["ts"]
         last_update_time = time.time()
-        update_interval = 1.0  # Start with 1 second interval
+        update_interval = 2.0  # Start with 2 seconds interval
         start_time = time.time()
         current_message = ""
-        thinking = False
+        currently_thinking = False
         message_ts = initial_message
 
         for chunk in response:
             last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
             last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
+            if len(last_reasoning_chunk) > 0:
+                self.client.assistant_threads_setStatus(
+                    channel_id=self.channel_id,
+                    thread_ts=self.thread_ts,
+                    status=f"{self.model.value} is thinking...",
+                )
+            else:
+                self.client.assistant_threads_setStatus(
+                    channel_id=self.channel_id,
+                    thread_ts=self.thread_ts,
+                    status=f"{self.model.value} is generating...",
+                )
             if not self.show_thoughts:
                 last_reasoning_chunk = ""
-            if not thinking and len(last_reasoning_chunk) > 0:
-                thinking = True
+            if not currently_thinking and len(last_reasoning_chunk) > 0:
+                currently_thinking = True
                 last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
-            if thinking and len(last_reasoning_chunk) == 0:
-                thinking = False
+            if currently_thinking and len(last_reasoning_chunk) == 0:
+                currently_thinking = False
                 self.client.chat_update(
                     channel=self.channel_id,
                     ts=message_ts,
@@ -459,7 +478,7 @@ class ChatSession:
                     message_ts = self.client.chat_postMessage(
                         channel=self.channel_id,
                         thread_ts=self.thread_ts,
-                        text=f"... [[ {self.model.value} thinking ]] ...",
+                        text=f"... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
                     )["ts"]
                     current_message = ""
                 else:
@@ -467,14 +486,12 @@ class ChatSession:
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=f"{current_message} ... [[ {self.model.value} thinking ]] ...",
+                        text=f"{current_message} ... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
                     )
 
             # Adjust the update interval if the process takes more than 30 seconds
-            if current_time - start_time > 30:
-                update_interval = 2
-            if current_time - start_time > 90:
-                update_interval = 2.5
+            if current_time - start_time > 60:
+                update_interval = 3.0
 
         # Final update to remove the suffix
         self.client.chat_update(

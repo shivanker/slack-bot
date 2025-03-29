@@ -62,10 +62,25 @@ def handle_message(body, say, logger):
 
     try:
         user_session = ChatSession(user_id, channel_id, thread_ts, client)
+        client.assistant_threads_setStatus(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            status="processing request...",
+        )
         user_session.process_direct_message(text, logger)
+        client.assistant_threads_setStatus(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            status="",
+        )
     except Exception as e:
         say(ERROR_HEADER + "\n```\n" + str(e) + "\n```\n")
         traceback.print_exc()
+        client.assistant_threads_setStatus(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            status="failed",
+        )
 
 
 SlackRequestHandler.clear_all_log_handlers()
