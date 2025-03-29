@@ -2,13 +2,11 @@ from enum import Enum
 
 
 class TextModel(Enum):
-    GPT_35 = "gpt-3.5-turbo"
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = "gpt-4o-mini"
     GPT_4_TURBO = "gpt-4-turbo"
     O1 = "o1"
     O3_MINI = "o3-mini"
-    CLAUDE_3_OPUS = "claude-3-opus-20240229"
     CLAUDE_37_SONNET = "claude-3-7-sonnet-20250219"
     CLAUDE_35_HAIKU = "claude-3-5-haiku-20241022"
     GEMINI_25 = "gemini/gemini-2.5-pro-exp-03-25"
@@ -16,5 +14,4 @@ class TextModel(Enum):
     # GROQ_LLAMA3_8B = "groq/llama3-8b-8192"
     LLAMA3_70B = "fireworks_ai/llama-v3-70b-instruct"
     LLAMA31_405B = "fireworks_ai/llama-v3p1-405b-instruct"
-    LLAMA31_8B = "fireworks_ai/llama-v3p1-8b-instruct"
     DEEPSEEK_R1 = "fireworks_ai/deepseek-r1"
