@@ -15,6 +15,7 @@ from slack_sdk import WebClient
 from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
+from llm_utils import generate_title
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
@@ -246,10 +247,7 @@ class ChatSession:
             say(text="Model set to O3 Mini.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
-            say(text="Model set to GPT-4o (Omni).")
-        elif cmd in ["\\gpt4o-mini"]:
-            self.model = TextModel.GPT_4O_MINI
-            say(text="Model set to GPT-4o Mini.")
+            say(text="Model set to GPT-4o.")
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
@@ -301,7 +299,7 @@ class ChatSession:
 - \\who: Returns the name of the chat model you are chatting with.\n
 - \\o1: Use O1 for future messages.\n
 - \\o3mini: Use O3 Mini for future messages.\n
-- \\gpt4o: Use GPT-4o (Omni) for future messages.\n
+- \\gpt4o: Use GPT-4o for future messages.\n
 - \\sonnet: Use Claude 3.7 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
 - \\gemini: Use Gemini 2.5 Pro for future messages.\n
@@ -357,14 +355,10 @@ class ChatSession:
         elif commands:
             self.process_command(commands[-1])
 
-        messages_with_instr = (
-            # [ChatMessage.from_system(self.system_instr)] + messages
-            # if not self.model.value.startswith("o1")
-            # else
-            [ChatMessage.from_user(self.system_instr)]
-            + messages
-        )
-        messages_with_instr = [msg.to_openai_format() for msg in messages_with_instr]  # type: ignore
+        messages_with_instr = [
+            msg.to_openai_format()
+            for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
+        ]
         logger.debug(messages_with_instr)
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
@@ -496,4 +490,10 @@ class ChatSession:
         # Final update to remove the suffix
         self.client.chat_update(
             channel=self.channel_id, ts=message_ts, text=current_message
+        )
+        title = generate_title(messages_with_instr)
+        self.client.assistant_threads_setTitle(
+            channel_id=self.channel_id,
+            thread_ts=self.thread_ts,
+            title=title,
         )
