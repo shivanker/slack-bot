@@ -11,6 +11,15 @@ from lite_llms import TextModel
 from litellm import completion  # type: ignore
 from messages import ChatMessage, ChatRole
 from slack_sdk import WebClient
+from agno.agent import Agent, RunResponse
+from agno.models.anthropic.claude import Claude
+from agno.tools.duckduckgo import DuckDuckGoTools
+from agno.tools.yfinance import YFinanceTools
+from agno.tools.youtube import YouTubeTools
+from agno.tools.calculator import CalculatorTools 
+from agno.tools.thinking import ThinkingTools
+from agno.tools.crawl4ai import Crawl4aiTools
+from agno.storage.dynamodb import DynamoDbStorage
 
 from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
@@ -76,6 +85,24 @@ class ChatSession:
         self.client = client
         self.streaming_mode = True
         self.show_thoughts = False
+        self.debug_mode = False
+        
+        # Initialize Agno storage
+        self.storage = DynamoDbStorage(
+            table_name="agent_slackbot_agno_sessions",
+            region_name="us-east-1",
+        )
+
+        # Initialize Agno tools
+        self.agent_tools = [
+            DuckDuckGoTools(),
+            YFinanceTools(enable_all=True),
+            YouTubeTools(),
+            CalculatorTools(enable_all=True),
+            ThinkingTools(),
+            Crawl4aiTools(max_length=None),
+        ]
+
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
@@ -291,10 +318,18 @@ class ChatSession:
         elif cmd.startswith("\\extract "):
             if say:
                 say(text=(extract(cmd[8:]) or "None"))
+        elif cmd == "\\debug":
+            self.debug_mode ^= True
+            say(text=f'Debug mode {"enabled" if self.debug_mode else "disabled"}')
+        elif cmd == "\\agno-sonnet":
+            self.model = TextModel.CLAUDE_37_SONNET
+            say(text="Switched to Agno Agent with Claude 3.7 Sonnet")
         elif cmd == "\\help":
             say(
                 f"""
-{HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far. Here's the full list of available commands you can use:\n
+{HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far.\n\n
+New! Agno Agent: Use '\\agno-sonnet' to enable Claude 3.7 Sonnet with web search, calculator, and other tools.\n
+Here's the full list of available commands:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
 - \\o1: Use O1 for future messages.\n
@@ -395,9 +430,41 @@ class ChatSession:
                 for chunk in self.break_message(reasoning_content):
                     self.say(text=chunk)
             # Send response in chunks
-            for chunk in self.break_message(full_text):
-                self.say(text=chunk)
-            return
+            # Handle Agno agent responses differently
+            if self.model in [TextModel.CLAUDE_37_SONNET]:
+                agent = Agent(
+                    model=Claude(id="claude-3-7-sonnet-20250219"),
+                    user_id=self.user_id,
+                    session_id=self.thread_ts,
+                    description="Helpful agent with web access",
+                    tools=self.agent_tools,
+                    add_datetime_to_instructions=True,
+                    show_tool_calls=True,
+                    tool_call_limit=25,
+                    storage=self.storage,
+                    add_history_to_messages=True,
+                    telemetry=False,
+                )
+                
+                response = agent.run(input=text, stream=False)
+                
+                if self.debug_mode:
+                    debug_info = "\n\n".join([
+                        f"Run ID: {response.run_id}",
+                        f"Model: {response.model}",
+                        f"Tools: {[t.__class__.__name__ for t in self.agent_tools]}",
+                        f"Response:\n{str(response)[:2000]}..."  # Truncate long responses
+                    ])
+                    for chunk in self.break_message(debug_info):
+                        self.say(text=chunk)
+                else:
+                    for chunk in self.break_message(response.content):
+                        self.say(text=chunk)
+                return
+            else:
+                for chunk in self.break_message(full_text):
+                    self.say(text=chunk)
+                return
 
         response = completion(
             model=self.model.value,
@@ -417,6 +484,50 @@ class ChatSession:
         currently_thinking = False
         message_ts = initial_message
 
+        # Handle Agno agent stream if enabled
+        if self.model in [TextModel.CLAUDE_37_SONNET]:
+            agent = Agent(
+                model=Claude(id="claude-3-7-sonnet-20250219"),
+                user_id=self.user_id,
+                session_id=self.thread_ts,
+                description="Helpful agent with web access",
+                tools=self.agent_tools,
+                add_datetime_to_instructions=True,
+                show_tool_calls=True,
+                tool_call_limit=25,
+                storage=self.storage,
+                add_history_to_messages=True,
+                telemetry=False,
+            )
+            
+            response_stream = agent.run(input=text, stream=True)
+            
+            full_content = ""
+            for response in response_stream:
+                if self.debug_mode:
+                    debug_chunk = f"{response.event}: {str(response)[:500]}\n\n"
+                    self.client.chat_update(
+                        channel=self.channel_id,
+                        ts=message_ts,
+                        text=debug_chunk,
+                    )
+                else:
+                    full_content += response.content or ""
+                    self.client.chat_update(
+                        channel=self.channel_id,
+                        ts=message_ts,
+                        text=full_content + " ...",
+                    )
+            
+            # Final update to show complete response
+            self.client.chat_update(
+                channel=self.channel_id,
+                ts=message_ts,
+                text=full_content,
+            )
+            return
+
+        # Original streaming handling for non-agent models
         for chunk in response:
             last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
             last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
