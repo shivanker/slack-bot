@@ -314,7 +314,18 @@ class ChatSession:
             return False
         return True
 
-    def break_message(self, text: str, max_size: int = 2400) -> list[str]:
+    def _display_reasoning(self, reasoning_content: str) -> None:
+        """Format and display model's internal reasoning."""
+        formatted_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
+        for chunk in self._break_message(formatted_content):
+            self.say(text=chunk)
+
+    def _send_response_chunks(self, text: str) -> None:
+        """Break text into chunks and send to Slack."""
+        for chunk in self._break_message(text):
+            self.say(text=chunk)
+
+    def _break_message(self, text: str, max_size: int = 2400) -> list[str]:
         """Split text into chunks of approximately max_size characters, preserving whitespace.
         Attempts to break at newlines first, then spaces if necessary."""
         chunks = []
@@ -377,34 +388,34 @@ class ChatSession:
             thread_ts=self.thread_ts,
             status=f"{self.model.value} is generating ...",
         )
-        # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode:
-            response = completion(
-                model=self.model.value,
-                messages=messages_with_instr,
-                **extra_completion_params,
-            )
-            reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
-            full_text: str = response.choices[0].message.content  # type: ignore
+    def _handle_direct_response(self, messages: list[dict]) -> None:
+        """Handle non-streaming response generation and display."""
+        response = self._generate_response(messages, stream=False)
+        reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
+        full_text: str = response.choices[0].message.content  # type: ignore
 
-            if not self.show_thoughts:
-                reasoning_content = ""
+        # Display reasoning if enabled
+        if self.show_thoughts and reasoning_content:
+            self._display_reasoning(reasoning_content)
+            
+        # Send response in manageable chunks
+        self._send_response_chunks(full_text)
 
-            if reasoning_content:
-                reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
-                for chunk in self.break_message(reasoning_content):
-                    self.say(text=chunk)
-            # Send response in chunks
-            for chunk in self.break_message(full_text):
-                self.say(text=chunk)
-            return
-
-        response = completion(
+    def _generate_response(self, messages: list[dict], stream: bool = False) -> Any:
+        """Generate LLM response through the completion API."""
+        params = self._get_model_parameters()
+        params["stream"] = stream
+        self._update_status(f"{self.model.value} is generating...")
+        
+        return completion(
             model=self.model.value,
-            messages=messages_with_instr,
-            stream=True,
-            **extra_completion_params,
+            messages=messages,
+            **params,
         )
+
+    def _handle_streaming_response(self, messages: list[dict]) -> None:
+        """Handle streaming response generation and real-time updates."""
+        response = self._generate_response(messages, stream=True)
         initial_message = self.client.chat_postMessage(
             channel=self.channel_id,
             thread_ts=self.thread_ts,
@@ -487,11 +498,17 @@ class ChatSession:
             if current_time - start_time > 60:
                 update_interval = 3.0
 
-        # Final update to remove the suffix
+        # Finalize streaming response
+        self._finalize_streaming_response(message_ts, current_message, messages)
+
+    def _finalize_streaming_response(self, message_ts: str, content: str, messages: list[dict]) -> None:
+        """Clean up streaming response and set thread title."""
         self.client.chat_update(
-            channel=self.channel_id, ts=message_ts, text=current_message
+            channel=self.channel_id, 
+            ts=message_ts, 
+            text=content
         )
-        title = generate_title(messages_with_instr)
+        title = generate_title(messages)
         self.client.assistant_threads_setTitle(
             channel_id=self.channel_id,
             thread_ts=self.thread_ts,
