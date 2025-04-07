@@ -67,9 +67,24 @@ def extract(text):
 
 
 class ChatSession:
+    """
+    Manages a chat conversation within a Slack thread.
+
+    Handles fetching history, processing user commands, interacting with LLMs,
+    and sending responses back to Slack.
+    """
     def __init__(
         self, user_id: str, channel_id: str, thread_ts: str, client: WebClient
     ):
+        """
+        Initializes a new chat session.
+
+        Args:
+            user_id: The Slack ID of the user initiating the session.
+            channel_id: The Slack channel ID where the session takes place.
+            thread_ts: The timestamp of the parent message initiating the thread.
+            client: An initialized Slack WebClient.
+        """
         self.user_id = user_id
         self.channel_id = channel_id
         self.thread_ts = thread_ts
@@ -96,7 +111,21 @@ class ChatSession:
         )
 
     def fetch_conversation_history(self) -> tuple[list[ChatMessage], list[str]]:
+        """
+        Fetches the message history from the Slack thread associated with this session.
+
+        Parses messages, handles commands, extracts content from links and files,
+        and formats the history for the LLM.
+
+        Returns:
+            A tuple containing:
+                - A list of ChatMessage objects representing the conversation history.
+                - A list of command strings encountered in the history.
+        Raises:
+            Exception: If fetching or processing the conversation history fails.
+        """
         try:
+            # Retrieve all replies in the thread
             conversation_history = self.client.conversations_replies(
                 channel=self.channel_id, ts=self.thread_ts, limit=100, inclusive=True
             )
@@ -104,41 +133,56 @@ class ChatSession:
             logger.error(f"Error fetching conversation history: {str(e)}")
             raise e
         try:
-            messages = conversation_history["messages"]
+            messages = conversation_history.get("messages", [])
 
             history: list[ChatMessage] = []
             commands: list[str] = []
+
             for message in messages:
                 text = message.get("text")
-                sent_by_user = message.get("user") == self.user_id
+                user = message.get("user")
+                sent_by_user = user == self.user_id
+                is_bot_reply = user == self.client.auth_test()["user_id"] # Check if message is from our bot
+
+                # --- Process Text Content ---
                 if text:
                     if self.is_command(text):
-                        # Exclude command's response from chat history
-                        if history:
-                            history.pop()
+                        # If a command is found, record it.
+                        # If the previous message in history was the bot's response to this command, remove it.
+                        if history and is_bot_reply and history[-1].role == ChatRole.ASSISTANT:
+                             # This assumes the bot's reply immediately follows the user's command.
+                             # Might need adjustment if there can be delays or other messages in between.
+                             # We pop the bot's ack message for the command.
+                             history.pop()
                         commands.append(text)
+                        # Stop processing history if reset command is found
                         if text == "\\reset":
-                            break
-                        continue
+                            history = [] # Clear history up to the reset command
+                            break # Stop processing older messages
+                        continue # Skip adding command text to history
                     elif text.startswith(ERROR_HEADER):
+                        # Represent errors generically in history
                         history.append(ChatMessage.from_assistant("<Unknown Error />"))
                         continue
                     elif text.startswith(HELP_PREAMBLE):
+                        # Ignore help messages in history
                         continue
                     else:
+                        # Add regular text messages to history
                         history.append(
                             ChatMessage.from_user(text)
                             if sent_by_user
                             else ChatMessage.from_assistant(text)
                         )
-                    # Append the content of URLs to this text
+
+                    # --- Process Links in User Messages ---
+                    # If the message is from the user, check for links in rich text blocks
                     if sent_by_user:
-                        # ["blocks"][0]["elements"][0]["elements"][1]["url"]
-                        blocks = message.get("blocks")
+                        blocks = message.get("blocks", [])
                         for block in blocks:
-                            elements = block.get("elements")
+                            elements = block.get("elements", [])
                             for element in elements:
-                                inner_elements = element.get("elements")
+                                inner_elements = element.get("elements", [])
                                 for unit in inner_elements:
                                     if unit.get("type") == "link":
                                         url = unit.get("url")
@@ -146,34 +190,32 @@ class ChatSession:
                                             continue
 
                                         mimetype = check_mimetype(url)
-                                        logger.info(
-                                            f"Found link [{url}] of type [{mimetype}]."
-                                        )
-                                        if mimetype.startswith(
-                                            "image/"
-                                        ) or mimetype in [
-                                            "text/plain",
-                                            "application/pdf",
-                                        ]:
+                                        logger.info(f"Found link [{url}] of type [{mimetype}].")
+
+                                        # If it's an image, PDF, or plain text link treat it like a file upload
+                                        if mimetype.startswith("image/") or mimetype in ["text/plain", "application/pdf"]:
+                                            # Add to files list to be processed below
                                             message.setdefault("files", []).append(
                                                 {
-                                                    "name": url,
-                                                    "url_private": url,
+                                                    "name": url.split('/')[-1] or "linked_file", # Basic name extraction
+                                                    "url_private": url, # Assuming public links for now
                                                     "mimetype": mimetype,
                                                 }
                                             )
-                                            continue
+                                            continue # Skip further processing for this link
 
+                                        # Handle YouTube links
                                         if is_youtube_video(url):
-                                            logger.debug(
-                                                f"Fetching youtube transcript for [{url}]."
-                                            )
+                                            logger.debug(f"Fetching youtube transcript for [{url}].")
                                             content = yt_transcript(url)
                                             tag = "YoutubeTranscript"
+                                        # Handle other web links
                                         else:
                                             logger.debug(f"Reading text from [{url}].")
                                             content = scrape_text(url)
                                             tag = "ScrapedTextFromURL"
+
+                                        # Add extracted content as a separate user message
                                         if content:
                                             history.append(
                                                 ChatMessage.from_user(
@@ -181,119 +223,168 @@ class ChatSession:
                                                 )
                                             )
 
+                # --- Process File Attachments ---
                 files = message.get("files", [])
                 for file in files:
-                    logger.debug(f"Files:\n{file}")
-                    msg = None
+                    logger.debug(f"Processing file: {file.get('name', 'N/A')}")
+                    msg_content = None
                     mimetype = file.get("mimetype", "")
-                    logger.info(f"Found file [{file['name']}] of type [{mimetype}].")
-                    if mimetype.startswith("image/"):
-                        msg = f"<Image name:{file['name']}/>"
-                        file_url = file["url_private"]
-                        logger.error("Found image attachment.")
-                    elif mimetype == "text/plain":
-                        file_url = file["url_private"]
-                        content = download_file(file_url)
-                        msg = f"<File mimetype={file['mimetype']}>\n{content}\n</File>"
-                    elif mimetype == "application/pdf":
-                        file_url = file["url_private"]
-                        msg = f"<File mimetype={file['mimetype']}>\n{extract_text_from_pdf(file_url)}\n</File>"
-                    else:
-                        msg = f"<File name={file['name']}/>"
-                    if msg:
+                    file_url = file.get("url_private") # Use private URL which requires auth
+                    file_name = file.get("name", "UnknownFile")
+
+                    if not file_url:
+                        logger.warning(f"File '{file_name}' has no URL, skipping.")
+                        continue
+
+                    logger.info(f"Found file [{file_name}] of type [{mimetype}].")
+
+                    try:
+                        if mimetype.startswith("image/"):
+                            # Represent image file in history (content not downloaded here)
+                            msg_content = f"<Image name='{file_name}'/>"
+                            # Note: Actual image processing might need separate handling/model capabilities
+                        elif mimetype == "text/plain":
+                            # Download and include text content
+                            content = download_file(file_url).decode('utf-8', errors='ignore') # Decode bytes to string
+                            msg_content = f"<File name='{file_name}' mimetype='{mimetype}'>\n{content}\n</File>"
+                        elif mimetype == "application/pdf":
+                            # Extract text from PDF
+                            # Note: extract_text_from_pdf needs the URL, not downloaded content
+                            pdf_text = extract_text_from_pdf(file_url)
+                            msg_content = f"<File name='{file_name}' mimetype='{mimetype}'>\n{pdf_text}\n</File>"
+                        else:
+                            # Represent other file types by name
+                            msg_content = f"<File name='{file_name}' mimetype='{mimetype}'/>"
+
+                        if msg_content:
+                            # Add file representation/content as a message from the uploader
+                            history.append(
+                                ChatMessage.from_user(msg_content)
+                                if sent_by_user
+                                else ChatMessage.from_assistant(msg_content) # Or handle bot uploads differently if needed
+                            )
+                    except Exception as file_e:
+                        logger.error(f"Error processing file {file_name} ({file_url}): {str(file_e)}")
+                        # Add an error message to history for the failed file
+                        error_msg = f"<FileProcessingError name='{file_name}' error='{str(file_e)}'/>"
                         history.append(
-                            ChatMessage.from_user(msg)
-                            if sent_by_user
-                            else ChatMessage.from_assistant(msg)
+                            ChatMessage.from_user(error_msg) if sent_by_user else ChatMessage.from_assistant(error_msg)
                         )
 
-            # Ensure first message is from user
-            if history and not history[0].is_from(ChatRole.USER):
-                history = [ChatMessage.from_user("...")] + history
 
-            # Merge consecutive user messages into one
+            # --- Final History Adjustments ---
+
+            # Ensure the conversation starts with a user message if history is not empty
+            if history and not history[0].is_from(ChatRole.USER):
+                history.insert(0, ChatMessage.from_user("...")) # Add a placeholder user message
+
+            # Merge consecutive messages from the same role into single messages
             merged_messages: list[ChatMessage] = []
-            prev_role = None
-            for chatmsg in history:
-                if chatmsg.is_from(prev_role):  # type: ignore
-                    merged_messages[-1].content += "\n" + chatmsg.content
-                else:
-                    merged_messages.append(chatmsg)
-                    prev_role = chatmsg.role
+            if history: # Check if history is not empty before merging
+                current_merged_message = history[0]
+                for i in range(1, len(history)):
+                    chatmsg = history[i]
+                    # Merge if the current message role matches the last merged message role
+                    if chatmsg.role == current_merged_message.role:
+                        current_merged_message.content += "\n" + chatmsg.content
+                    else:
+                        # If roles differ, add the completed merged message and start a new one
+                        merged_messages.append(current_merged_message)
+                        current_merged_message = chatmsg
+                # Add the last merged message
+                merged_messages.append(current_merged_message)
+
             logger.debug(f"<history>\n{merged_messages}</history>")
             return (merged_messages, commands)
 
         except Exception as e:
-            logger.error(f"Error processing conversation: {str(e)}")
+            logger.error(f"Error fetching/processing conversation history: {str(e)}")
             raise e
 
     def is_command(self, text):
         if not isinstance(text, str):
             return False
         cmd = text.strip()
-        return cmd.startswith("\\")
+        return isinstance(text, str) and text.strip().startswith("\\")
 
-    def process_command(self, text, say=lambda text: None):
+    def process_command(self, text: str, say=lambda text: None) -> bool:
+        """
+        Processes a command string, updates session state, and optionally sends a confirmation message.
+
+        Args:
+            text: The command string (e.g., "\\reset").
+            say: A function to send a message back to the user (optional).
+
+        Returns:
+            True if the text was a recognized and processed command, False otherwise.
+        """
         cmd = text.strip()
+
+        # --- Session Control ---
         if cmd == "\\reset":
-            say(text="Session has been reset.")
+            # Note: History clearing happens in fetch_conversation_history
+            if say: say(text="Session has been reset.")
+        # --- Model Information ---
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
-            say(text=f"You are currently chatting with {self.model.value}.")
+            if say: say(text=f"You are currently chatting with {self.model.value}.")
+        # --- Model Selection ---
         elif cmd == "\\o1":
             self.model = TextModel.O1
-            say(text="Model set to O1.")
+            if say: say(text="Model set to O1.")
         elif cmd in ["\\o3-mini", "\\o3mini", "\\mini"]:
             self.model = TextModel.O3_MINI
-            say(text="Model set to O3 Mini.")
+            if say: say(text="Model set to O3 Mini.")
         elif cmd in ["\\gpt4o", "\\gpt"]:
             self.model = TextModel.GPT_4O
-            say(text="Model set to GPT-4o.")
+            if say: say(text="Model set to GPT-4o.")
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
-            say(text="Model set to GPT-4.")
+            if say: say(text="Model set to GPT-4.")
         elif cmd in ["\\llama", "\\llama31", "\\llama405", "\\llama405b"]:
             self.model = TextModel.LLAMA31_405B
-            say(text="Model set to LLaMA-3.1 405B.")
+            if say: say(text="Model set to LLaMA-3.1 405B.")
         elif cmd in ["\\llama70b", "\\llama70"]:
             self.model = TextModel.LLAMA3_70B
-            say(text="Model set to LLaMA-3 70B.")
+            if say: say(text="Model set to LLaMA-3 70B.")
         # elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
         #     self.model = TextModel.GROQ_LLAMA3_70B
-        #     say(text="Model set to LLaMA 3 70B (Groq).")
+        #     if say: say(text="Model set to LLaMA 3 70B (Groq).")
         elif cmd in ["\\sonnet", "\\claude"]:
             self.model = TextModel.CLAUDE_37_SONNET
-            say(text="Model set to Claude 3.7 Sonnet.")
+            if say: say(text="Model set to Claude 3.7 Sonnet.")
         elif cmd == "\\haiku":
             self.model = TextModel.CLAUDE_35_HAIKU
-            say(text="Model set to Claude 3.5 Haiku.")
+            if say: say(text="Model set to Claude 3.5 Haiku.")
         elif cmd == "\\gemini":
             self.model = TextModel.GEMINI_25
-            say(text="Model set to Gemini 2.5 Pro.")
+            if say: say(text="Model set to Gemini 2.5 Pro.")
         elif cmd == "\\deepseek":
             self.model = TextModel.DEEPSEEK_R1
-            say(text="Model set to Deepseek R1.")
+            if say: say(text="Model set to Deepseek R1.")
+        # --- Feature Toggles ---
         elif cmd == "\\stream":
             self.streaming_mode ^= True
-            say(
-                text=f'Streaming mode {"enabled" if self.streaming_mode else "disabled"}.'
-            )
+            if say: say(text=f'Streaming mode {"enabled" if self.streaming_mode else "disabled"}.')
         elif cmd == "\\nostream":
             self.streaming_mode = False
-            say(text="Streaming mode disabled.")
+            if say: say(text="Streaming mode disabled.")
         elif cmd == "\\thoughts":
             self.show_thoughts ^= True
-            say(
-                text=f'Displaying thoughts {"enabled" if self.show_thoughts else "disabled"}.'
-            )
+            if say: say(text=f'Displaying thoughts {"enabled" if self.show_thoughts else "disabled"}.')
         elif cmd == "\\nothoughts":
             self.show_thoughts = False
-            say(text="Displaying thoughts disabled.")
+            if say: say(text="Displaying thoughts disabled.")
+        # --- Debug/Utility Commands ---
         elif cmd.startswith("\\extract "):
+            # Extract text from URL (for debugging)
             if say:
-                say(text=(extract(cmd[8:]) or "None"))
+                extracted_text = extract(cmd[len("\\extract "):]) or "Failed to extract text."
+                say(text=extracted_text)
         elif cmd == "\\help":
-            say(
-                f"""
+            # Display help message
+            if say:
+                say(
+                    f"""
 {HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
@@ -307,193 +398,362 @@ class ChatSession:
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
 - \\thoughts: Toggle thoughts display. When enabled, thoughts will be shared.\n
-                """
-            )
+                    """
+                )
         else:
-            # say(f"Unknown command: [{cmd}]")
-            return False
-        return True
+            # Command not recognized
+            # if say: say(f"Unknown command: [{cmd}]") # Optionally notify user of unknown command
+            return False # Indicate command was not processed
+
+        return True # Indicate command was processed
 
     def break_message(self, text: str, max_size: int = 2400) -> list[str]:
-        """Split text into chunks of approximately max_size characters, preserving whitespace.
-        Attempts to break at newlines first, then spaces if necessary."""
+        """
+        Splits a long text message into smaller chunks suitable for Slack messages.
+
+        Attempts to break at newlines first, then spaces, to maintain readability.
+        Avoids breaking mid-word if possible within the max_size limit.
+
+        Args:
+            text: The text content to split.
+            max_size: The approximate maximum size for each chunk.
+
+        Returns:
+            A list of text chunks.
+        """
         chunks = []
-        i = 0
-        while i < len(text):
-            chunk = text[i : i + max_size]
+        start_index = 0
+        while start_index < len(text):
+            # Determine the end index for the current chunk
+            end_index = start_index + max_size
 
-            # If this isn't the last chunk, try to break at a natural boundary
-            if i + max_size < len(text):
-                last_newline = chunk.rfind("\n")
-                last_space = chunk.rfind(" ")
-                # Prefer breaking at newlines, fall back to spaces
-                break_at = last_newline if last_newline != -1 else last_space
-                if break_at != -1:
-                    chunk = chunk[:break_at]
-                    i = i + break_at  # Adjust the next starting point
-                else:
-                    i = i + max_size
+            # If the chunk extends beyond the text length, take the rest
+            if end_index >= len(text):
+                chunk = text[start_index:]
+                start_index = len(text) # Move index to the end
             else:
-                i = i + max_size
+                # Find the best place to break within the potential chunk
+                sub_chunk = text[start_index:end_index]
+                last_newline = sub_chunk.rfind("\n")
+                last_space = sub_chunk.rfind(" ")
 
-            if chunk.strip():  # Only include non-empty chunks
+                # Prefer breaking at the last newline, then last space
+                break_at = -1
+                if last_newline != -1:
+                    break_at = last_newline + 1 # Include the newline in the break
+                elif last_space != -1:
+                    break_at = last_space + 1 # Include the space in the break
+
+                # If a natural break point is found, use it
+                if break_at > 0: # Use > 0 because rfind returns -1 if not found
+                    chunk = text[start_index : start_index + break_at]
+                    start_index += break_at # Move index past the break point
+                else:
+                    # No natural break found, force break at max_size
+                    chunk = text[start_index:end_index]
+                    start_index = end_index # Move index to the end of this chunk
+
+            # Add the chunk if it's not just whitespace
+            if chunk.strip():
                 chunks.append(chunk)
 
         return chunks
 
-    def process_direct_message(self, text: str, logger: Any) -> None:
-        messages, commands = self.fetch_conversation_history()
+    def _prepare_llm_messages(self, history: list[ChatMessage]) -> list[dict[str, Any]]:
+        """Adds system instructions and formats messages for the LLM API."""
+        # Prepend system instruction as a user message (required by some models like Claude)
+        # Note: Ideally, system instructions should use the 'system' role, but compatibility needs checking.
+        messages_with_instr = [ChatMessage.from_system(self.system_instr)] + history
+        # Convert to the format expected by the litellm.completion function (e.g., OpenAI format)
+        return [msg.to_openai_format() for msg in messages_with_instr]
 
-        # Re-run previous commands in session
-        for cmd in commands[:-1]:
-            self.process_command(cmd)
-
-        # Run the latest command, responding if it's the current message
-        if self.is_command(text):
-            if self.process_command(text, self.say):
-                return  # Don't return if command processing failed. Let's process it like a text
-        elif commands:
-            self.process_command(commands[-1])
-
-        messages_with_instr = [
-            msg.to_openai_format()
-            for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
-        ]
-        logger.debug(messages_with_instr)
-        extra_completion_params: dict[str, Any] = {
-            "max_tokens": 128000,
+    def _get_llm_parameters(self) -> dict[str, Any]:
+        """Returns model-specific parameters for the litellm completion call."""
+        params: dict[str, Any] = {
+            "max_tokens": 128000, # Default max tokens
         }
-        if self.model.value.startswith("o"):
-            extra_completion_params["reasoning_effort"] = "high"
+        # Add model-specific reasoning/thinking parameters if applicable
+        if self.model.value.startswith("o"): # Example for 'o' models
+            params["reasoning_effort"] = "high"
         elif self.model == TextModel.CLAUDE_37_SONNET:
-            extra_completion_params["thinking"] = {
+            params["thinking"] = {
                 "type": "enabled",
-                "budget_tokens": 32000,
+                "budget_tokens": 32000, # Example budget
             }
-            extra_completion_params["max_completion_tokens"] = 64000
+            params["max_completion_tokens"] = 64000 # Example completion token limit
 
-        self.client.assistant_threads_setStatus(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            status=f"{self.model.value} is generating ...",
-        )
-        # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode:
+        return params
+
+    def _update_thread_status(self, status: str) -> None:
+        """Updates the status message shown in the Slack thread header."""
+        try:
+            self.client.assistant_threads_setStatus(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                status=status,
+            )
+        except Exception as e:
+            logger.error(f"Failed to update thread status to '{status}': {e}")
+
+    def _update_thread_title(self, messages_for_llm: list[dict[str, Any]]) -> None:
+        """Generates a title based on the conversation and updates the Slack thread title."""
+        try:
+            title = generate_title(messages_for_llm)
+            self.client.assistant_threads_setTitle(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                title=title,
+            )
+        except Exception as e:
+            logger.error(f"Failed to update thread title: {e}")
+
+
+    def _generate_non_streaming_response(self, messages_for_llm: list[dict[str, Any]], llm_params: dict[str, Any]) -> None:
+        """Generates a response from the LLM without streaming and sends it."""
+        self._update_thread_status(f"{self.model.value} is generating...")
+        try:
             response = completion(
                 model=self.model.value,
-                messages=messages_with_instr,
-                **extra_completion_params,
+                messages=messages_for_llm,
+                **llm_params,
             )
-            reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
-            full_text: str = response.choices[0].message.content  # type: ignore
+            # Extract reasoning and message content
+            # Note: .get("reasoning_content", "") might be specific to certain models/litellm setup
+            reasoning_content = response.choices[0].get("reasoning_content", "") if self.show_thoughts else ""
+            full_text: str = response.choices[0].message.content or "" # Ensure content is string
 
-            if not self.show_thoughts:
-                reasoning_content = ""
-
+            # Send reasoning content if enabled and present
             if reasoning_content:
-                reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
-                for chunk in self.break_message(reasoning_content):
+                formatted_reasoning = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
+                for chunk in self.break_message(formatted_reasoning):
                     self.say(text=chunk)
-            # Send response in chunks
+
+            # Send the main response content in chunks
             for chunk in self.break_message(full_text):
                 self.say(text=chunk)
+
+            # Update title after successful generation
+            self._update_thread_title(messages_for_llm)
+
+        except Exception as e:
+            logger.error(f"Error during non-streaming generation: {e}")
+            self.say(text=f"{ERROR_HEADER}{e}") # Send error to user
+        finally:
+            # Clear status after completion or error
+             self._update_thread_status("")
+
+
+    def _generate_streaming_response(self, messages_for_llm: list[dict[str, Any]], llm_params: dict[str, Any]) -> None:
+        """Generates a response from the LLM with streaming and updates the message."""
+        initial_status_text = f"[[ {self.model.value} ]] Thinking ..."
+        self._update_thread_status(initial_status_text.strip("[] ")) # Set initial status
+
+        # Post an initial message to be updated
+        try:
+            initial_post = self.client.chat_postMessage(
+                channel=self.channel_id,
+                thread_ts=self.thread_ts,
+                text=initial_status_text,
+            )
+            message_ts = initial_post["ts"]
+        except Exception as e:
+            logger.error(f"Failed to post initial streaming message: {e}")
+            self.say(text=f"{ERROR_HEADER}Failed to start streaming response.")
+            self._update_thread_status("") # Clear status
             return
 
-        response = completion(
-            model=self.model.value,
-            messages=messages_with_instr,
-            stream=True,
-            **extra_completion_params,
-        )
-        initial_message = self.client.chat_postMessage(
-            channel=self.channel_id,
-            thread_ts=self.thread_ts,
-            text=f"[[ {self.model.value} ]] Thinking ...",
-        )["ts"]
         last_update_time = time.time()
         update_interval = 2.0  # Start with 2 seconds interval
         start_time = time.time()
-        current_message = ""
-        currently_thinking = False
-        message_ts = initial_message
+        current_message_content = ""
+        currently_thinking = False # Track if the current chunk is reasoning
+        stream_error = None
 
-        for chunk in response:
-            last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
-            last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
-            if len(last_reasoning_chunk) > 0:
-                self.client.assistant_threads_setStatus(
-                    channel_id=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    status=f"{self.model.value} is thinking...",
-                )
+        try:
+            # Start the streaming completion call
+            response_stream = completion(
+                model=self.model.value,
+                messages=messages_for_llm,
+                stream=True,
+                **llm_params,
+            )
+
+            for chunk in response_stream:
+                # Extract reasoning and content delta from the current chunk
+                # Note: Accessing delta might differ slightly based on LLM provider via litellm
+                delta = chunk.choices[0].delta
+                last_reasoning_chunk: str = delta.get("reasoning_content", "") or ""
+                last_content_chunk: str = delta.content or ""
+
+                # Update thread status based on whether reasoning or content is received
+                if self.show_thoughts and len(last_reasoning_chunk) > 0:
+                    self._update_thread_status(f"{self.model.value} is thinking...")
+                elif len(last_content_chunk) > 0:
+                     self._update_thread_status(f"{self.model.value} is generating...")
+
+                # Skip reasoning chunks if thoughts are disabled
+                if not self.show_thoughts:
+                    last_reasoning_chunk = ""
+
+                # Handle transitions between thinking and generating states
+                if not currently_thinking and len(last_reasoning_chunk) > 0:
+                    # Started thinking
+                    currently_thinking = True
+                    last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}" # Add opening tag
+                elif currently_thinking and len(last_reasoning_chunk) == 0 and len(last_content_chunk) > 0:
+                    # Finished thinking, starting to generate content
+                    currently_thinking = False
+                    # Update the existing message with the closing tag for thoughts
+                    try:
+                        self.client.chat_update(
+                            channel=self.channel_id,
+                            ts=message_ts,
+                            text=f"{current_message_content}\n</thinking>\n\n", # Append closing tag
+                        )
+                    except Exception as e:
+                         logger.warning(f"Minor error updating message at thought end: {e}")
+
+                    # Start a *new* message for the actual response content
+                    try:
+                        new_post = self.client.chat_postMessage(
+                            channel=self.channel_id,
+                            thread_ts=self.thread_ts,
+                            text=f"... [[ {self.model.value} generating response ]] ...",
+                        )
+                        message_ts = new_post["ts"] # Update message_ts to the new message
+                        current_message_content = "" # Reset content for the new message
+                    except Exception as e:
+                        logger.error(f"Failed to post new message after thinking: {e}")
+                        # Attempt to continue updating the previous message as fallback
+                        current_message_content += "\n</thinking>\n\n" # Add closing tag anyway
+
+
+                # Append the latest chunks to the current message content
+                current_message_content += last_reasoning_chunk + last_content_chunk
+                current_time = time.time()
+
+                # --- Update Slack Message Periodically or if Too Long ---
+                # Check if it's time to update the Slack message or if it exceeds size limit
+                if (current_time - last_update_time >= update_interval) or len(current_message_content) > 2400:
+                    last_update_time = current_time
+                    update_text = f"{current_message_content} ... [[ {self.model.value} {'thinking' if currently_thinking else 'generating'} ]] ..."
+
+                    # If message is too long, finalize the current one and start a new one
+                    if len(current_message_content) > 2400:
+                         # TODO: This logic might split mid-thought block if a thought is very long.
+                         # Consider using break_message here if that's an issue.
+                        try:
+                            self.client.chat_update(
+                                channel=self.channel_id,
+                                ts=message_ts,
+                                text=current_message_content, # Update with final content for this part
+                            )
+                            # Start a new message for continuation
+                            new_post = self.client.chat_postMessage(
+                                channel=self.channel_id,
+                                thread_ts=self.thread_ts,
+                                text=f"... [[ {self.model.value} {'thinking' if currently_thinking else 'generating'} ]] ...",
+                            )
+                            message_ts = new_post["ts"]
+                            current_message_content = "" # Reset for the new message
+                        except Exception as e:
+                            logger.error(f"Failed to split long streaming message: {e}")
+                            # Continue updating the existing message as fallback
+                            try:
+                                self.client.chat_update(channel=self.channel_id, ts=message_ts, text=update_text)
+                            except Exception as update_e:
+                                logger.error(f"Fallback update failed: {update_e}")
+                    else:
+                        # Just update the existing message
+                        try:
+                            self.client.chat_update(channel=self.channel_id, ts=message_ts, text=update_text)
+                        except Exception as e:
+                            logger.warning(f"Minor error updating streaming message: {e}")
+
+
+                # Adjust update interval for very long generations
+                if current_time - start_time > 60:
+                    update_interval = 3.0 # Increase interval slightly
+
+        except Exception as e:
+            logger.error(f"Error during streaming generation: {e}")
+            stream_error = e # Store error to report later
+
+        # --- Finalize Streaming ---
+        try:
+            # Final update to remove the "generating/thinking" suffix
+            final_text = current_message_content
+            # Add closing tag if stream ended mid-thought
+            if currently_thinking and self.show_thoughts:
+                final_text += "\n</thinking>"
+
+            self.client.chat_update(
+                channel=self.channel_id, ts=message_ts, text=final_text
+            )
+
+            # Report any error that occurred during the stream
+            if stream_error:
+                 self.say(text=f"{ERROR_HEADER}{stream_error}")
+
+            # Update title only if streaming was successful (or partially successful)
+            if not stream_error:
+                 self._update_thread_title(messages_for_llm)
+
+        except Exception as e:
+            logger.error(f"Error finalizing streaming message: {e}")
+            # Attempt to send final content as new message if update fails
+            if not stream_error: # Avoid double-reporting errors
+                 self.say(text=f"{current_message_content}\n\n{ERROR_HEADER}Failed to finalize stream.")
+
+        finally:
+            # Clear status after completion or error
+            self._update_thread_status("")
+
+
+    def process_direct_message(self, text: str, logger: Any) -> None:
+        """
+        Processes an incoming direct message or mention in the thread.
+
+        Fetches history, handles commands, calls the appropriate LLM generation method
+        (streaming or non-streaming), and updates the Slack thread.
+
+        Args:
+            text: The text content of the incoming Slack message.
+            logger: The logger instance.
+        """
+        try:
+            # 1. Fetch history and identify past commands
+            messages, commands = self.fetch_conversation_history()
+
+            # 2. Apply state changes from previous commands in the thread (e.g., model changes)
+            # We don't resend the confirmation messages ('say' is None)
+            for cmd in commands:
+                 self.process_command(cmd, say=None) # Apply state changes silently
+
+            # 3. Process the *current* message if it's a command
+            if self.is_command(text):
+                # Process the command and send confirmation back to the user ('say' is self.say)
+                if self.process_command(text, say=self.say):
+                    return # If it was a valid command, stop processing further
+
+            # 4. Prepare messages for the LLM
+            messages_for_llm = self._prepare_llm_messages(messages)
+            logger.debug(f"Messages prepared for LLM: {messages_for_llm}")
+
+            # 5. Get LLM parameters
+            llm_params = self._get_llm_parameters()
+            logger.debug(f"LLM parameters: {llm_params}")
+
+            # 6. Generate response using the appropriate mode
+            if self.streaming_mode:
+                self._generate_streaming_response(messages_for_llm, llm_params)
             else:
-                self.client.assistant_threads_setStatus(
-                    channel_id=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    status=f"{self.model.value} is generating...",
-                )
-            if not self.show_thoughts:
-                last_reasoning_chunk = ""
-            if not currently_thinking and len(last_reasoning_chunk) > 0:
-                currently_thinking = True
-                last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
-            if currently_thinking and len(last_reasoning_chunk) == 0:
-                currently_thinking = False
-                self.client.chat_update(
-                    channel=self.channel_id,
-                    ts=message_ts,
-                    text=f"{current_message}\n</thinking>\n\n",
-                )
-                # Start a new message for post-thinking response
-                message_ts = self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    text=f"... [[ {self.model.value} generating response ]] ...",
-                )["ts"]
-                current_message = ""
+                self._generate_non_streaming_response(messages_for_llm, llm_params)
 
-            current_message += last_reasoning_chunk + last_chunk
-            current_time = time.time()
-
-            # Check if it's time to send an update or start a new message
-            if (
-                current_time - last_update_time >= update_interval
-                or len(current_message) > 2400
-            ):
-                # TODO: Not sure if we can have a single big chunk and need to use break_message here
-                last_update_time = current_time
-                if len(current_message) > 2400:
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=current_message,
-                    )
-                    # Start a new message with just the new content
-                    message_ts = self.client.chat_postMessage(
-                        channel=self.channel_id,
-                        thread_ts=self.thread_ts,
-                        text=f"... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
-                    )["ts"]
-                    current_message = ""
-                else:
-                    # Update existing message
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=f"{current_message} ... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
-                    )
-
-            # Adjust the update interval if the process takes more than 30 seconds
-            if current_time - start_time > 60:
-                update_interval = 3.0
-
-        # Final update to remove the suffix
-        self.client.chat_update(
-            channel=self.channel_id, ts=message_ts, text=current_message
-        )
-        title = generate_title(messages_with_instr)
-        self.client.assistant_threads_setTitle(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            title=title,
-        )
+        except Exception as e:
+            logger.exception("An unexpected error occurred in process_direct_message")
+            try:
+                # Attempt to notify the user in Slack about the failure
+                self.say(text=f"{ERROR_HEADER}An unexpected error occurred:\n```\n{e}\n```")
+            except Exception as notify_e:
+                logger.error(f"Failed to notify user about the error: {notify_e}")
