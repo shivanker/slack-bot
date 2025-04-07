@@ -227,7 +227,8 @@ class ChatSession:
             logger.error(f"Error processing conversation: {str(e)}")
             raise e
 
-    def is_command(self, text):
+    def is_command(self, text: str) -> bool:
+        """Check if the given text is a command (starts with '\\')."""
         if not isinstance(text, str):
             return False
         cmd = text.strip()
@@ -314,6 +315,29 @@ class ChatSession:
             return False
         return True
 
+    def _update_thread_status(self, status: str) -> None:
+        """Update the status displayed in the Slack thread."""
+        try:
+            self.client.assistant_threads_setStatus(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                status=status,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update thread status: {e}")
+
+    def _update_thread_title(self, messages_for_title: list[dict[str, Any]]) -> None:
+        """Generate and update the title of the Slack thread based on the conversation."""
+        try:
+            title = generate_title(messages_for_title)
+            self.client.assistant_threads_setTitle(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                title=title,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update thread title: {e}")
+
     def break_message(self, text: str, max_size: int = 2400) -> list[str]:
         """Split text into chunks of approximately max_size characters, preserving whitespace.
         Attempts to break at newlines first, then spaces if necessary."""
@@ -344,156 +368,3 @@ class ChatSession:
     def process_direct_message(self, text: str, logger: Any) -> None:
         messages, commands = self.fetch_conversation_history()
 
-        # Re-run previous commands in session
-        for cmd in commands[:-1]:
-            self.process_command(cmd)
-
-        # Run the latest command, responding if it's the current message
-        if self.is_command(text):
-            if self.process_command(text, self.say):
-                return  # Don't return if command processing failed. Let's process it like a text
-        elif commands:
-            self.process_command(commands[-1])
-
-        messages_with_instr = [
-            msg.to_openai_format()
-            for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
-        ]
-        logger.debug(messages_with_instr)
-        extra_completion_params: dict[str, Any] = {
-            "max_tokens": 128000,
-        }
-        if self.model.value.startswith("o"):
-            extra_completion_params["reasoning_effort"] = "high"
-        elif self.model == TextModel.CLAUDE_37_SONNET:
-            extra_completion_params["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": 32000,
-            }
-            extra_completion_params["max_completion_tokens"] = 64000
-
-        self.client.assistant_threads_setStatus(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            status=f"{self.model.value} is generating ...",
-        )
-        # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode:
-            response = completion(
-                model=self.model.value,
-                messages=messages_with_instr,
-                **extra_completion_params,
-            )
-            reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
-            full_text: str = response.choices[0].message.content  # type: ignore
-
-            if not self.show_thoughts:
-                reasoning_content = ""
-
-            if reasoning_content:
-                reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
-                for chunk in self.break_message(reasoning_content):
-                    self.say(text=chunk)
-            # Send response in chunks
-            for chunk in self.break_message(full_text):
-                self.say(text=chunk)
-            return
-
-        response = completion(
-            model=self.model.value,
-            messages=messages_with_instr,
-            stream=True,
-            **extra_completion_params,
-        )
-        initial_message = self.client.chat_postMessage(
-            channel=self.channel_id,
-            thread_ts=self.thread_ts,
-            text=f"[[ {self.model.value} ]] Thinking ...",
-        )["ts"]
-        last_update_time = time.time()
-        update_interval = 2.0  # Start with 2 seconds interval
-        start_time = time.time()
-        current_message = ""
-        currently_thinking = False
-        message_ts = initial_message
-
-        for chunk in response:
-            last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
-            last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
-            if len(last_reasoning_chunk) > 0:
-                self.client.assistant_threads_setStatus(
-                    channel_id=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    status=f"{self.model.value} is thinking...",
-                )
-            else:
-                self.client.assistant_threads_setStatus(
-                    channel_id=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    status=f"{self.model.value} is generating...",
-                )
-            if not self.show_thoughts:
-                last_reasoning_chunk = ""
-            if not currently_thinking and len(last_reasoning_chunk) > 0:
-                currently_thinking = True
-                last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
-            if currently_thinking and len(last_reasoning_chunk) == 0:
-                currently_thinking = False
-                self.client.chat_update(
-                    channel=self.channel_id,
-                    ts=message_ts,
-                    text=f"{current_message}\n</thinking>\n\n",
-                )
-                # Start a new message for post-thinking response
-                message_ts = self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    text=f"... [[ {self.model.value} generating response ]] ...",
-                )["ts"]
-                current_message = ""
-
-            current_message += last_reasoning_chunk + last_chunk
-            current_time = time.time()
-
-            # Check if it's time to send an update or start a new message
-            if (
-                current_time - last_update_time >= update_interval
-                or len(current_message) > 2400
-            ):
-                # TODO: Not sure if we can have a single big chunk and need to use break_message here
-                last_update_time = current_time
-                if len(current_message) > 2400:
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=current_message,
-                    )
-                    # Start a new message with just the new content
-                    message_ts = self.client.chat_postMessage(
-                        channel=self.channel_id,
-                        thread_ts=self.thread_ts,
-                        text=f"... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
-                    )["ts"]
-                    current_message = ""
-                else:
-                    # Update existing message
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=f"{current_message} ... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
-                    )
-
-            # Adjust the update interval if the process takes more than 30 seconds
-            if current_time - start_time > 60:
-                update_interval = 3.0
-
-        # Final update to remove the suffix
-        self.client.chat_update(
-            channel=self.channel_id, ts=message_ts, text=current_message
-        )
-        title = generate_title(messages_with_instr)
-        self.client.assistant_threads_setTitle(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            title=title,
-        )
