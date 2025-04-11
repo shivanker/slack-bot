@@ -136,9 +136,9 @@ class ChatSession:
                         # ["blocks"][0]["elements"][0]["elements"][1]["url"]
                         blocks = message.get("blocks")
                         for block in blocks:
-                            elements = block.get("elements")
+                            elements = block.get("elements", [])
                             for element in elements:
-                                inner_elements = element.get("elements")
+                                inner_elements = element.get("elements", [])
                                 for unit in inner_elements:
                                     if unit.get("type") == "link":
                                         url = unit.get("url")
@@ -164,6 +164,8 @@ class ChatSession:
                                             )
                                             continue
 
+                                        content = None
+                                        tag = None
                                         if is_youtube_video(url):
                                             logger.debug(
                                                 f"Fetching youtube transcript for [{url}]."
@@ -184,27 +186,29 @@ class ChatSession:
                 files = message.get("files", [])
                 for file in files:
                     logger.debug(f"Files:\n{file}")
-                    msg = None
+                    msg_content = None
                     mimetype = file.get("mimetype", "")
-                    logger.info(f"Found file [{file['name']}] of type [{mimetype}].")
+                    file_url = file.get("url_private")
+                    file_name = file.get("name", "Unknown File")
+                    logger.info(f"Found file [{file_name}] of type [{mimetype}].")
                     if mimetype.startswith("image/"):
-                        msg = f"<Image name:{file['name']}/>"
-                        file_url = file["url_private"]
+                        msg_content = f"<Image name:{file_name}/>"
+                        # TODO: Images are not supported yet.
                         logger.error("Found image attachment.")
                     elif mimetype == "text/plain":
-                        file_url = file["url_private"]
-                        content = download_file(file_url)
-                        msg = f"<File mimetype={file['mimetype']}>\n{content}\n</File>"
+                        content = download_file(file_url).decode(
+                            "utf-8", errors="replace"
+                        )
+                        msg_content = f"<File name='{file_name}' mimetype='{file['mimetype']}'>\n{content}\n</File>"
                     elif mimetype == "application/pdf":
-                        file_url = file["url_private"]
-                        msg = f"<File mimetype={file['mimetype']}>\n{extract_text_from_pdf(file_url)}\n</File>"
+                        msg_content = f"<File name='{file_name}' mimetype='{mimetype}'>\n{extract_text_from_pdf(file_url)}\n</File>"
                     else:
-                        msg = f"<File name={file['name']}/>"
-                    if msg:
+                        msg_content = f"<File name={file_name}/>"
+                    if msg_content:
                         history.append(
-                            ChatMessage.from_user(msg)
+                            ChatMessage.from_user(msg_content)
                             if sent_by_user
-                            else ChatMessage.from_assistant(msg)
+                            else ChatMessage.from_assistant(msg_content)
                         )
 
             # Ensure first message is from user
@@ -233,7 +237,14 @@ class ChatSession:
         cmd = text.strip()
         return cmd.startswith("\\")
 
-    def process_command(self, text, say=lambda text: None):
+    def process_command(self, text: str, say=lambda text: None) -> bool:
+        """Processes a command string.
+        Args:
+            text: The command string (e.g., "\\reset").
+            say: A function to send a response back to the user (optional).
+        Returns:
+            True if the text was a known command and processed, False otherwise.
+        """
         cmd = text.strip()
         if cmd == "\\reset":
             say(text="Session has been reset.")
@@ -290,7 +301,11 @@ class ChatSession:
             say(text="Displaying thoughts disabled.")
         elif cmd.startswith("\\extract "):
             if say:
-                say(text=(extract(cmd[8:]) or "None"))
+                url_to_extract = cmd[len("\\extract ") :].strip()
+                extracted_content = (
+                    extract(url_to_extract) or "Failed to extract content."
+                )
+                say(text=extracted_content)
         elif cmd == "\\help":
             say(
                 f"""
@@ -316,7 +331,14 @@ class ChatSession:
 
     def break_message(self, text: str, max_size: int = 2400) -> list[str]:
         """Split text into chunks of approximately max_size characters, preserving whitespace.
-        Attempts to break at newlines first, then spaces if necessary."""
+        Attempts to break at newlines first, then spaces, to maintain readability.
+        Avoids breaking mid-word if possible. Preserves whitespace.
+        Args:
+            text: The text to split.
+            max_size: The approximate maximum size for each chunk.
+        Returns:
+            A list of text chunks.
+        """
         chunks = []
         i = 0
         while i < len(text):
