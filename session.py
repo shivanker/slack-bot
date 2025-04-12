@@ -363,25 +363,8 @@ class ChatSession:
 
         return chunks
 
-    def process_direct_message(self, text: str, logger: Any) -> None:
-        messages, commands = self.fetch_conversation_history()
-
-        # Re-run previous commands in session
-        for cmd in commands[:-1]:
-            self.process_command(cmd)
-
-        # Run the latest command, responding if it's the current message
-        if self.is_command(text):
-            if self.process_command(text, self.say):
-                return  # Don't return if command processing failed. Let's process it like a text
-        elif commands:
-            self.process_command(commands[-1])
-
-        messages_with_instr = [
-            msg.to_openai_format()
-            for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
-        ]
-        logger.debug(messages_with_instr)
+    def _get_completion_params(self) -> dict[str, Any]:
+        """Determines extra parameters for the litellm.completion call based on the model."""
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
@@ -393,56 +376,61 @@ class ChatSession:
                 "budget_tokens": 32000,
             }
             extra_completion_params["max_completion_tokens"] = 64000
+        return extra_completion_params
 
-        self.client.assistant_threads_setStatus(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            status=f"{self.model.value} is generating ...",
-        )
-        # Process the user's message using the selected model and conversation history
-        if not self.streaming_mode:
-            response = completion(
-                model=self.model.value,
-                messages=messages_with_instr,
-                **extra_completion_params,
-            )
-            reasoning_content = response.choices[0].get("reasoning_content", "")  # type: ignore
-            full_text: str = response.choices[0].message.content  # type: ignore
-
-            if not self.show_thoughts:
-                reasoning_content = ""
-
-            if reasoning_content:
-                reasoning_content = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
-                for chunk in self.break_message(reasoning_content):
-                    self.say(text=chunk)
-            # Send response in chunks
-            for chunk in self.break_message(full_text):
-                self.say(text=chunk)
-            return
-
+    def _handle_non_streaming_response(
+        self, messages_with_instr: list[dict], extra_completion_params: dict
+    ) -> None:
+        """Handles the response from the LLM when streaming is disabled."""
         response = completion(
+            model=self.model.value,
+            messages=messages_with_instr,
+            **extra_completion_params,
+        )
+        reasoning_content = response.choices[0].get("reasoning_content", "") if self.show_thoughts else ""  # type: ignore
+        full_text: str = response.choices[0].message.content or ""  # type: ignore
+
+        if reasoning_content:
+            formatted_reasoning = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
+            for chunk in self.break_message(formatted_reasoning):
+                self.say(text=chunk)
+
+        # Send the main response content in chunks
+        for chunk in self.break_message(full_text):
+            self.say(text=chunk)
+
+    def _handle_streaming_response(
+        self, messages_with_instr: list[dict], extra_completion_params: dict
+    ) -> None:
+        """Handles the response from the LLM when streaming is enabled."""
+        response_stream = completion(
             model=self.model.value,
             messages=messages_with_instr,
             stream=True,
             **extra_completion_params,
         )
-        initial_message = self.client.chat_postMessage(
+
+        # Post initial message and track updates
+        message_ts = self.client.chat_postMessage(
             channel=self.channel_id,
             thread_ts=self.thread_ts,
             text=f"[[ {self.model.value} ]] Thinking ...",
         )["ts"]
+
         last_update_time = time.time()
-        update_interval = 2.0  # Start with 2 seconds interval
+        update_interval = 2.0  # Start with 2 seconds interval, adjust later
         start_time = time.time()
         current_message = ""
-        currently_thinking = False
-        message_ts = initial_message
+        currently_thinking = False  # Track if the current chunk is part of 'thinking'
 
-        for chunk in response:
-            last_reasoning_chunk: str = chunk.choices[0].delta.get("reasoning_content", "")  # type: ignore
-            last_chunk: str = chunk.choices[0].delta.content or ""  # type: ignore
-            if len(last_reasoning_chunk) > 0:
+        for chunk in response_stream:
+            delta = chunk.choices[0].delta  # type: ignore
+            last_reasoning_chunk: str = delta.get("reasoning_content", "")  # type: ignore
+            last_chunk: str = delta.content or ""  # type: ignore
+
+            # Update Slack thread status based on whether reasoning or text is received
+            if last_reasoning_chunk:
+                # Regardless of show_thoughts, we want to show the thinking status.
                 self.client.assistant_threads_setStatus(
                     channel_id=self.channel_id,
                     thread_ts=self.thread_ts,
@@ -456,66 +444,167 @@ class ChatSession:
                 )
             if not self.show_thoughts:
                 last_reasoning_chunk = ""
-            if not currently_thinking and len(last_reasoning_chunk) > 0:
+
+            # Handle transitions in & out of thinking
+            if not currently_thinking and last_reasoning_chunk:
+                # Started thinking
                 currently_thinking = True
                 last_reasoning_chunk = f"<thinking>\n{last_reasoning_chunk}"
-            if currently_thinking and len(last_reasoning_chunk) == 0:
+            elif currently_thinking and not last_reasoning_chunk:
                 currently_thinking = False
+                # Close the thinking tag
                 self.client.chat_update(
                     channel=self.channel_id,
                     ts=message_ts,
                     text=f"{current_message}\n</thinking>\n\n",
                 )
-                # Start a new message for post-thinking response
+                # Start a *new* message for the main response content
                 message_ts = self.client.chat_postMessage(
                     channel=self.channel_id,
                     thread_ts=self.thread_ts,
                     text=f"... [[ {self.model.value} generating response ]] ...",
                 )["ts"]
-                current_message = ""
+                current_message = ""  # Reset content for the new message
 
+            # Append the current chunk (reasoning or text)
             current_message += last_reasoning_chunk + last_chunk
             current_time = time.time()
 
-            # Check if it's time to send an update or start a new message
+            # Throttle Slack updates: Update message if interval passed or message is long
             if (
                 current_time - last_update_time >= update_interval
                 or len(current_message) > 2400
             ):
                 # TODO: Not sure if we can have a single big chunk and need to use break_message here
                 last_update_time = current_time
+                # If message exceeds limit, finalize current message and start a new one
                 if len(current_message) > 2400:
+                    # TODO: Use break_message logic here? For now, just post and start new.
+                    # This might slightly exceed the limit if the last chunk pushes it over.
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=current_message,
+                        text=current_message,  # Post the full content before starting new
                     )
-                    # Start a new message with just the new content
+                    # Start a new message
+                    status_indicator = (
+                        "thinking" if currently_thinking else "generating"
+                    )
                     message_ts = self.client.chat_postMessage(
                         channel=self.channel_id,
                         thread_ts=self.thread_ts,
-                        text=f"... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
+                        text=f"... [[ {self.model.value} {status_indicator} ]] ...",
                     )["ts"]
-                    current_message = ""
+                    current_message = ""  # Reset content for the new message
                 else:
-                    # Update existing message
+                    # Update the existing message with a progress indicator
+                    status_indicator = (
+                        "thinking" if currently_thinking else "generating"
+                    )
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=f"{current_message} ... [[ {self.model.value} {"thinking" if currently_thinking else "generating"} ]] ...",
+                        text=f"{current_message} ... [[ {self.model.value} {status_indicator} ]] ...",
                     )
 
-            # Adjust the update interval if the process takes more than 30 seconds
+            # Adjust update interval if generation is taking a long time
             if current_time - start_time > 60:
                 update_interval = 3.0
 
         # Final update to remove the suffix
+        if currently_thinking:
+            current_message += "\n</thinking>"
         self.client.chat_update(
             channel=self.channel_id, ts=message_ts, text=current_message
         )
-        title = generate_title(messages_with_instr)
-        self.client.assistant_threads_setTitle(
-            channel_id=self.channel_id,
-            thread_ts=self.thread_ts,
-            title=title,
-        )
+
+    def _generate_from_model(
+        self, messages_with_instr: list[dict], logger: Any
+    ) -> None:
+        """
+        Generates a response from the configured LLM using the provided messages.
+
+        Handles both streaming and non-streaming modes, updates Slack status,
+        and sets the thread title.
+
+        Args:
+            messages_with_instr: The list of messages formatted for the LLM API.
+            logger: The logger instance.
+        """
+        logger.debug(f"Generating response using model: {self.model.value}")
+        extra_completion_params = self._get_completion_params()
+
+        # Set initial status in Slack thread
+        try:
+            self.client.assistant_threads_setStatus(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                status=f"{self.model.value} is generating ...",
+            )
+        except Exception as e:
+            logger.warning(f"Could not set thread status: {e}")  # Non-fatal
+
+        # Generate response based on streaming mode
+        if self.streaming_mode:
+            self._handle_streaming_response(
+                messages_with_instr, extra_completion_params
+            )
+        else:
+            self._handle_non_streaming_response(
+                messages_with_instr, extra_completion_params
+            )
+
+        # Generate and set the thread title after the response is complete
+        try:
+            title = generate_title(messages_with_instr)
+            self.client.assistant_threads_setTitle(
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
+                title=title,
+            )
+            logger.info(f"Set thread title to: {title}")
+        except Exception as e:
+            logger.error(f"Failed to generate or set thread title: {e}")
+
+    def process_direct_message(self, text: str, logger: Any) -> None:
+        """Processes an incoming direct message or mention in a thread.
+
+        Fetches history, handles commands, generates a response using the LLM,
+        and sends the response back to Slack.
+
+        Args:
+            text: The text content of the incoming Slack message.
+            logger: The logger instance.
+        """
+        # 1. Fetch conversation history and past commands
+        messages, commands = self.fetch_conversation_history()
+
+        # 2. Re-apply state changes from previous commands in the session
+        # (e.g., model changes, streaming mode)
+        # We skip the last command if the current `text` is that command.
+        commands_to_replay = commands
+        if self.is_command(text) and commands and commands[-1] == text:
+            commands_to_replay = commands[:-1]
+
+        for cmd in commands_to_replay:
+            self.process_command(cmd)
+
+        # 3. Process the current message if it's a command
+        if self.is_command(text):
+            # Process the command and send a response back.
+            if self.process_command(text, self.say):
+                return
+            # If process_command returned False, it's an unknown command.
+            # We'll treat it as regular text input for the LLM below.
+            logger.info(f"Unknown command '{text}', treating as text input.")
+
+        # 4. Prepare messages for the LLM API
+        # Combine system instructions with the fetched/merged message history
+        messages_with_instr = [
+            msg.to_openai_format()
+            for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
+        ]
+        logger.debug(f"Messages being sent to LLM:\n{messages_with_instr}")
+
+        # 5. Generate and send the response using the LLM
+        self._generate_from_model(messages_with_instr, logger)
