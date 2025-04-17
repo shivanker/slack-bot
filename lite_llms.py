@@ -2,10 +2,10 @@ from enum import Enum
 
 
 class TextModel(Enum):
-    GPT_4O = "gpt-4o"
+    GPT_41 = "gpt-4.1"
     GPT_4_TURBO = "gpt-4-turbo"
-    O1 = "o1"
-    O3_MINI = "o3-mini"
+    O3 = "o3"
+    O4_MINI = "o4-mini"
     CLAUDE_37_SONNET = "claude-3-7-sonnet-20250219"
     CLAUDE_35_HAIKU = "claude-3-5-haiku-20241022"
     GEMINI_2_FLASH = "gemini/gemini-2.0-flash"

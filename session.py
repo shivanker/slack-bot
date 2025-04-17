@@ -272,15 +272,15 @@ class ChatSession:
             say(text="Session has been reset.")
         elif cmd in ("\\who?", "\\who", "\\llm", "\\model"):
             say(text=f"You are currently chatting with {self.model.value}.")
-        elif cmd == "\\o1":
-            self.model = TextModel.O1
-            say(text="Model set to O1.")
-        elif cmd in ["\\o3-mini", "\\o3mini", "\\mini"]:
-            self.model = TextModel.O3_MINI
-            say(text="Model set to O3 Mini.")
-        elif cmd in ["\\gpt4o", "\\gpt"]:
-            self.model = TextModel.GPT_4O
-            say(text="Model set to GPT-4o.")
+        elif cmd == "\\o3":
+            self.model = TextModel.O3
+            say(text="Model set to O3.")
+        elif cmd in ["\\o4-mini", "\\o4mini", "\\mini"]:
+            self.model = TextModel.O4_MINI
+            say(text="Model set to O4 Mini.")
+        elif cmd in ["\\gpt41", "\\gpt"]:
+            self.model = TextModel.GPT_41
+            say(text="Model set to GPT-4.1.")
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
             say(text="Model set to GPT-4.")
@@ -341,9 +341,9 @@ class ChatSession:
 {HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
-- \\o1: Use O1 for future messages.\n
-- \\o3mini: Use O3 Mini for future messages.\n
-- \\gpt4o: Use GPT-4o for future messages.\n
+- \\o3: Use O3 for future messages.\n
+- \\o4mini: Use O4 Mini for future messages.\n
+- \\gpt41: Use GPT-4.1 for future messages.\n
 - \\sonnet: Use Claude 3.7 Sonnet for future messages.\n
 - \\agno-sonnet: Use Agno agent with Claude 3.7 Sonnet for future messages.\n
 - \\llama: Use LLaMA-3.1 405B for future messages.\n
