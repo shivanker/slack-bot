@@ -1,8 +1,7 @@
 import re
 import os
 import time
-import uuid
-from typing import Any, Iterator
+from typing import Any
 
 import litellm  # type: ignore
 import requests  # type: ignore
@@ -29,7 +28,6 @@ from agno.tools.yfinance import YFinanceTools
 from agno.tools.youtube import YouTubeTools
 from agno.tools.calculator import CalculatorTools
 from agno.tools.thinking import ThinkingTools
-from agno.tools.crawl4ai import Crawl4aiTools
 from agno.storage.dynamodb import DynamoDbStorage
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
@@ -570,7 +568,7 @@ class ChatSession:
                 YouTubeTools(),
                 CalculatorTools(enable_all=True),
                 ThinkingTools(),
-                Crawl4aiTools(max_length=None),
+                # Crawl4aiTools(max_length=None),
             ],
             add_datetime_to_instructions=True,
             show_tool_calls=True,
