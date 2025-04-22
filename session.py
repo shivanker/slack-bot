@@ -304,36 +304,47 @@ class ChatSession:
             say(text=f"You are currently chatting with {self.model.value}.")
         elif cmd == "\\o3":
             self.model = TextModel.O3
+            self.agent = ""
             say(text="Model set to O3.")
         elif cmd in ["\\o4-mini", "\\o4mini", "\\mini"]:
             self.model = TextModel.O4_MINI
+            self.agent = ""
             say(text="Model set to O4 Mini.")
         elif cmd in ["\\gpt41", "\\gpt"]:
             self.model = TextModel.GPT_41
+            self.agent = ""
             say(text="Model set to GPT-4.1.")
         elif cmd == "\\gpt4":
             self.model = TextModel.GPT_4_TURBO
+            self.agent = ""
             say(text="Model set to GPT-4.")
         elif cmd in ["\\llama", "\\llama31", "\\llama405", "\\llama405b"]:
             self.model = TextModel.LLAMA31_405B
+            self.agent = ""
             say(text="Model set to LLaMA-3.1 405B.")
         elif cmd in ["\\llama70b", "\\llama70"]:
             self.model = TextModel.LLAMA3_70B
+            self.agent = ""
             say(text="Model set to LLaMA-3 70B.")
         # elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
         #     self.model = TextModel.GROQ_LLAMA3_70B
+        #     self.agent = ""
         #     say(text="Model set to LLaMA 3 70B (Groq).")
         elif cmd in ["\\sonnet", "\\claude"]:
             self.model = TextModel.CLAUDE_37_SONNET
+            self.agent = ""
             say(text="Model set to Claude 3.7 Sonnet.")
         elif cmd == "\\haiku":
             self.model = TextModel.CLAUDE_35_HAIKU
+            self.agent = ""
             say(text="Model set to Claude 3.5 Haiku.")
         elif cmd == "\\gemini":
             self.model = TextModel.GEMINI_25
+            self.agent = ""
             say(text="Model set to Gemini 2.5 Pro.")
         elif cmd == "\\deepseek":
             self.model = TextModel.DEEPSEEK_R1
+            self.agent = ""
             say(text="Model set to Deepseek R1.")
         elif cmd == "\\stream":
             self.streaming_mode ^= True
@@ -614,7 +625,7 @@ class ChatSession:
         message_ts = self.client.chat_postMessage(
             channel=self.channel_id,
             thread_ts=self.thread_ts,
-            text="[[ Agno Claude 3.7 Sonnet ]] Processing ...",
+            text=f"[[ Agno {self.model.value} ]] Processing ...",
         )["ts"]
 
         last_update_time = time.time()
@@ -654,7 +665,7 @@ class ChatSession:
                     message_ts = self.client.chat_postMessage(
                         channel=self.channel_id,
                         thread_ts=self.thread_ts,
-                        text="... [[ Agno agent continuing ]] ...",
+                        text=f"... [[ Agno {self.model.value} continuing ]] ...",
                     )["ts"]
                     current_message = ""  # Reset content for the new message
                 else:
@@ -662,7 +673,7 @@ class ChatSession:
                     self.client.chat_update(
                         channel=self.channel_id,
                         ts=message_ts,
-                        text=f"{current_message} ... [[ Agno agent processing ]] ...",
+                        text=f"{current_message} ... [[ Agno {self.model.value} processing ]] ...",
                     )
 
             # Adjust update interval if processing is taking a long time
