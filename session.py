@@ -5,6 +5,7 @@ from typing import Any
 
 import litellm  # type: ignore
 import requests  # type: ignore
+import boto3  # type: ignore
 
 from aws_lambda_powertools import Logger
 from lite_llms import TextModel
@@ -44,6 +45,7 @@ litellm.modify_params = True
 
 
 download_cache: dict[str, bytes] = {}
+settings_table = boto3.resource("dynamodb").Table("slackbot_user_settings")  # type: ignore
 
 
 def download_file(file_url: str):
@@ -256,6 +258,36 @@ class ChatSession:
             return False
         cmd = text.strip()
         return cmd.startswith("\\")
+
+    def _save_settings(self, session_id: str = "default"):
+        item = {
+            "user_id": self.user_id,
+            "session_id": session_id,
+            "agent": self.agent,
+            "model": self.model.value,
+            "streaming_mode": self.streaming_mode,
+            "show_thoughts": self.show_thoughts,
+            "debug_mode": self.debug_mode,
+        }
+        try:
+            settings_table.put_item(Item=item)
+            logger.info(f"Saved settings for user {self.user_id}.")
+        except Exception as e:
+            logger.error(f"Failed to save settings for user {self.user_id}: {e}")
+
+    def _load_settings(self, session_id: str = "default"):
+        item = settings_table.get_item(
+            Key={"user_id": self.user_id, "session_id": session_id}
+        )
+        if "Item" in item:
+            settings = item["Item"]
+            self.model = TextModel(settings["model"])
+            self.streaming_mode = settings["streaming_mode"]
+            self.show_thoughts = settings["show_thoughts"]
+            self.debug_mode = settings["debug_mode"]
+            self.agent = settings["agent"]
+        else:
+            logger.error(f"No settings found for user {self.user_id}.")
 
     def process_command(self, text: str, say=lambda text: None) -> bool:
         """Processes a command string.
@@ -739,27 +771,21 @@ class ChatSession:
             text: The text content of the incoming Slack message.
             logger: The logger instance.
         """
-        # 1. Fetch conversation history and past commands
+        # 1. Load settings for the user
+        self._load_settings()
+
+        # 2. Fetch conversation history and past commands
         messages, commands = self.fetch_conversation_history()
 
-        # 2. Re-apply state changes from previous commands in the session
-        # (e.g., model changes, streaming mode)
-        # We skip the last command if the current `text` is that command.
-        commands_to_replay = commands
-        if self.is_command(text) and commands and commands[-1] == text:
-            commands_to_replay = commands[:-1]
-
-        for cmd in commands_to_replay:
-            self.process_command(cmd)
-
-        # 3. Process the current message if it's a command
+        # 3. Process commands
         if self.is_command(text):
             # Process the command and send a response back.
             if self.process_command(text, self.say):
+                self._save_settings()
                 return
             # If process_command returned False, it's an unknown command.
             # We'll treat it as regular text input for the LLM below.
-            logger.info(f"Unknown command '{text}', treating as text input.")
+            logger.error(f"Unknown command '{text}', treating as text input.")
 
         # Set initial status in Slack thread
         self._set_chat_status(
