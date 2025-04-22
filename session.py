@@ -541,10 +541,6 @@ class ChatSession:
 
     def _init_agno_agent(self) -> Agent:
         """Initialize the Agno agent with the appropriate configuration."""
-        # Get a unique user id for the agent
-        user_identity = self.client.users_identity()
-        unique_user_id: str = user_identity.get("user", {}).get("id", self.user_id)  # type: ignore
-
         model: Model = Claude(id=TextModel.CLAUDE_37_SONNET.value)
         if self.model.value.startswith("claude"):
             model = Claude(id=self.model.value)
@@ -559,7 +555,7 @@ class ChatSession:
         # Initialize the agent with Claude Sonnet model
         agent = Agent(
             model=model,
-            user_id=unique_user_id,
+            user_id=self.user_id,
             session_id=self.thread_ts,  # Use thread_ts as session_id
             description="You are a helpful agent running in a Slack bot.",
             tools=[
