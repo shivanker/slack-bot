@@ -640,7 +640,7 @@ class ChatSession:
                 chunk = response.content or ""
 
             # Update Slack thread status
-            self._set_chat_status("Agno agent is processing...")
+            self._set_chat_status(f"Agno {model} is processing...")
 
             # Append the current chunk
             current_message += chunk
