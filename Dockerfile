@@ -1,55 +1,26 @@
-FROM amazonlinux:2 AS build
-
-# Install required packages
-RUN yum update -y && \
-    yum install -y libSM libXext xvfb && \
-    yum clean all
-
-FROM public.ecr.aws/lambda/python:3.12
-
-# Copy requirements.txt
-COPY requirements.txt ${LAMBDA_TASK_ROOT}
-
-RUN pip install pip -U
-# Install the specified packages
-RUN pip install -r requirements.txt
-
-# Copy all code
-COPY *.py ${LAMBDA_TASK_ROOT}
+FROM python:3.12-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=0 \
-    # PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright \
     PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
     DEBIAN_FRONTEND=noninteractive \
     PATH="/app/.venv/bin:$PATH"
 
-COPY --from=build /usr/lib64/libSM.so.6 /usr/lib64/
-COPY --from=build /usr/lib64/libXext.so.6 /usr/lib64/
-
-
-RUN dnf update -y
-RUN dnf install -y git tar gcc gcc-c++ make wget xz mesa-libGL jq unzip
-RUN dnf install -y vim
-    # build-essential curl python3-dev \ TODO
-RUN dnf install -y libX11 libXcomposite libXcursor libXdamage libXext libXi \
-    libXtst cups-libs libXScrnSaver libXrandr alsa-lib pango \
-    atk at-spi2-atk gtk3 libdrm mesa-libgbm \
-    xorg-x11-server-Xvfb xorg-x11-xauth dbus-glib nss
-
-# Install ffmpeg and ffprobe for ARM64
-ADD https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz .
-RUN tar xvf ffmpeg-release-arm64-static.tar.xz && \
-    mv ffmpeg-*-arm64-static/ffmpeg ffmpeg-*-arm64-static/ffprobe /usr/local/bin/ && \
-    rm -rf ffmpeg-release-arm64-static*
-
 # Set working directory
 WORKDIR /app
 
+# Install system dependencies (combine into one RUN command to reduce layers)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git ffmpeg libsm6 libxext6 xvfb xauth x11-utils \
+    build-essential python3-dev vim \
+    g++ make cmake unzip libcurl4-openssl-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv tool
+RUN pip install pip -U
 RUN pip install uv
 
 # Copy project build files
@@ -65,7 +36,37 @@ RUN uv venv .venv --python=3.12 && \
 COPY owl/owl/ ./owl/
 COPY owl/licenses/ ./licenses/
 COPY owl/assets/ ./assets/
+COPY owl/examples/ ./examples/
 
-# Set the CMD to your handler (could also be done as a parameter override outside of the Dockerfile)
-WORKDIR ${LAMBDA_TASK_ROOT}
+# Create startup script
+RUN printf '#!/bin/bash\nxvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" python "$@"' > /usr/local/bin/xvfb-python && \
+    chmod +x /usr/local/bin/xvfb-python
+
+# Create welcome script
+RUN printf '#!/bin/bash\necho "Welcome to the OWL Project Docker environment!"\necho "Welcome to OWL Project Docker environment!"\necho ""\necho "Available scripts:"\nls -1 *.py | grep -v "__" | sed "s/^/- /"\necho ""\necho "Run examples:"\necho "  xvfb-python run.py                     # Run default script"\necho "  xvfb-python run_deepseek_example.py      # Run DeepSeek example"\necho ""\necho "Or use custom query:"\necho "  xvfb-python run.py \"Your question\""\necho ""' > /usr/local/bin/owl-welcome && \
+    chmod +x /usr/local/bin/owl-welcome
+
+# Set working directory
+WORKDIR /app/owl
+
+# Camel Owl startup command
+# CMD ["/bin/bash", "-c", "owl-welcome && /bin/bash"]
+
+# Include global arg in this stage of the build
+ARG FUNCTION_DIR="/var/task"
+# Set working directory to function root directory
+WORKDIR ${FUNCTION_DIR}
+
+# Copy function code
+RUN mkdir -p ${FUNCTION_DIR}
+COPY requirements.txt ${FUNCTION_DIR}
+COPY *.py ${FUNCTION_DIR}
+
+# Install the function's dependencies
+RUN pip install --target ${FUNCTION_DIR} awslambdaric
+
+# Install the specified packages
+RUN pip install -r requirements.txt
+
+ENTRYPOINT [ "/usr/local/bin/python", "-m", "awslambdaric" ]
 CMD [ "lambda_function.handler" ]
