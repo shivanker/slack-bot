@@ -3,6 +3,7 @@ FROM python:3.12-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=0 \
     PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright \
     PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright \
     DEBIAN_FRONTEND=noninteractive \
@@ -31,6 +32,8 @@ COPY owl/README.md .
 RUN uv venv .venv --python=3.12 && \
     . .venv/bin/activate && \
     uv pip install -e .
+# TODO: Not sure if venv is needed above
+# RUN uv pip install --system -e .
 
 # Copy project runtime files
 COPY owl/owl/ ./owl/

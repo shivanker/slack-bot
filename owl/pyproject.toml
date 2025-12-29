@@ -40,7 +40,7 @@ Documentation = "https://docs.camel-ai.org"
 packages = ["owl"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
