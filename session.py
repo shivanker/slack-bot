@@ -96,7 +96,7 @@ class ChatSession:
         # Retrieve the sender's information using the Slack API
         sender_info = client.users_info(user=user_id)
         self.user_name = sender_info["user"]["real_name"]
-        self.model = TextModel.GEMINI_25
+        self.model = TextModel.GEMINI_3_PRO
         self.system_instr = (
             "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
             "conversation natural and flowing, don't respond with robotic or closing statements like "
@@ -304,36 +304,30 @@ class ChatSession:
             say(
                 text=f"You are currently chatting with {self.model.value} (agent: [{self.agent}])."
             )
-        elif cmd == "\\o3":
-            self.model = TextModel.O3
-            say(text="Model set to O3.")
-        elif cmd in ["\\o4-mini", "\\o4mini", "\\mini"]:
-            self.model = TextModel.O4_MINI
-            say(text="Model set to O4 Mini.")
-        elif cmd in ["\\gpt41", "\\gpt"]:
-            self.model = TextModel.GPT_41
-            say(text="Model set to GPT-4.1.")
-        elif cmd == "\\gpt4":
-            self.model = TextModel.GPT_4_TURBO
-            say(text="Model set to GPT-4.")
-        elif cmd in ["\\llama", "\\llama31", "\\llama405", "\\llama405b"]:
-            self.model = TextModel.LLAMA31_405B
-            say(text="Model set to LLaMA-3.1 405B.")
-        elif cmd in ["\\llama70b", "\\llama70"]:
-            self.model = TextModel.LLAMA3_70B
-            say(text="Model set to LLaMA-3 70B.")
-        # elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
+        elif cmd in ["\\gpt5", "\\gpt"]:
+            self.model = TextModel.GPT_52
+            say(text="Model set to GPT-5.2.")
+        # elif cmd in ["\\llama", "\\llama31", "\\llama405", "\\llama405b"]:
+        #     self.model = TextModel.LLAMA31_405B
+        #     say(text="Model set to LLaMA-3.1 405B.")
+        # elif cmd in ["\\llama70b", "\\llama70"]:
+        #     self.model = TextModel.LLAMA3_70B
+        #     say(text="Model set to LLaMA-3 70B.")
+        # # elif cmd in ["\\groq", "\\groq70", "\\groq70b"]:
         #     self.model = TextModel.GROQ_LLAMA3_70B
         #     say(text="Model set to LLaMA 3 70B (Groq).")
         elif cmd in ["\\sonnet", "\\claude"]:
-            self.model = TextModel.CLAUDE_37_SONNET
-            say(text="Model set to Claude 3.7 Sonnet.")
+            self.model = TextModel.CLAUDE_45_SONNET
+            say(text="Model set to Claude 4.5 Sonnet.")
         elif cmd == "\\haiku":
-            self.model = TextModel.CLAUDE_35_HAIKU
-            say(text="Model set to Claude 3.5 Haiku.")
+            self.model = TextModel.CLAUDE_45_HAIKU
+            say(text="Model set to Claude 4.5 Haiku.")
+        elif cmd == "\\opus":
+            self.model = TextModel.CLAUDE_45_OPUS
+            say(text="Model set to Claude 4.5 Opus.")
         elif cmd == "\\gemini":
-            self.model = TextModel.GEMINI_25
-            say(text="Model set to Gemini 2.5 Pro.")
+            self.model = TextModel.GEMINI_3_PRO
+            say(text="Model set to Gemini 3 Pro.")
         elif cmd == "\\deepseek":
             self.model = TextModel.DEEPSEEK_R1
             say(text="Model set to Deepseek R1.")
@@ -379,13 +373,10 @@ class ChatSession:
 {HELP_PREAMBLE} I am a basic chatbot to quickly use GPT4, Claude, LLaMA & Gemini in one place. The chat is organized in sessions. Once you reset a session, all the previous conversation is lost. I am incapable of analyzing images or writing code right now, but feel free to upload PDFs, text files, or link to any websites, and I'll try to scrape whatever text I can. Note that model changes preserve the session so far. Here's the full list of available commands you can use:\n
 - \\reset: Reset the chat session. Preserves the previous LLM you were chatting with.\n
 - \\who: Returns the name of the chat model you are chatting with.\n
-- \\o3: Use O3 for future messages.\n
-- \\o4mini: Use O4 Mini for future messages.\n
-- \\gpt41: Use GPT-4.1 for future messages.\n
-- \\sonnet: Use Claude 3.7 Sonnet for future messages.\n
-- \\agno-sonnet: Use Agno agent with Claude 3.7 Sonnet for future messages.\n
-- \\llama: Use LLaMA-3.1 405B for future messages.\n
-- \\gemini: Use Gemini 2.5 Pro for future messages.\n
+- \\gpt5: Use GPT-5.2 for future messages.\n
+- \\sonnet: Use Claude 4.5 Sonnet for future messages.\n
+- \\opus: Use Claude 4.5 Opus for future messages.\n
+- \\gemini: Use Gemini 3 Pro for future messages.\n
 - \\deepseek: Use Deepseek R1 for future messages.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
@@ -437,9 +428,9 @@ class ChatSession:
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
-        if self.model.value.startswith("o"):
+        if self.model.value.startswith("gpt"):
             extra_completion_params["reasoning_effort"] = "high"
-        elif self.model == TextModel.CLAUDE_37_SONNET:
+        elif self.model.value.startswith("claude"):
             extra_completion_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": 32000,
@@ -581,14 +572,12 @@ class ChatSession:
 
     def _init_agno_agent(self) -> Agent:
         """Initialize the Agno agent with the appropriate configuration."""
-        model: Model = Claude(id=TextModel.CLAUDE_37_SONNET.value)
+        model: Model = Claude(id=TextModel.CLAUDE_45_SONNET.value)
         if self.model.value.startswith("claude"):
             model = Claude(id=self.model.value)
         elif self.model.value.startswith("gemini"):
             model = Gemini(id=self.model.value[len("gemini/") :], vertexai=True)
         elif self.model.value.startswith("gpt"):
-            model = OpenAIChat(id=self.model.value)
-        elif self.model.value.startswith("o"):
             model = OpenAIChat(id=self.model.value, reasoning_effort="high")
         else:
             self.say(text=f"Unknown Agno model: {self.model.value}, using Sonnet 3.7.")

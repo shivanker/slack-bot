@@ -29,7 +29,7 @@ def generate_title(messages: list[dict[str, Any]]) -> str:
             ).to_openai_format()
         ]
         response = completion(
-            model=TextModel.GEMINI_2_FLASH.value,
+            model=TextModel.GEMINI_3_FLASH.value,
             messages=messages,
         )
         return response.choices[0].message.content.strip()  # type: ignore

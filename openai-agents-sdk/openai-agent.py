@@ -69,9 +69,9 @@ class CustomModelProvider(ModelProvider):
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
-        if model_name and model_name.startswith("o"):
-            extra_completion_params["reasoning_effort"] = "high"
-        elif model_name == TextModel.CLAUDE_37_SONNET.value:
+        if model_name and model_name.startswith("gpt"):
+            extra_completion_params["reasoning_effort"] = "high" # TODO
+        elif model_name == TextModel.CLAUDE_45_SONNET.value:
             extra_completion_params["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": 32000,
@@ -79,7 +79,7 @@ class CustomModelProvider(ModelProvider):
             extra_completion_params["max_completion_tokens"] = 64000
             extra_completion_params["store"] = None
         return OpenAIChatCompletionsModel(
-            model=model_name or "claude-3-7-sonnet-20250219",
+            model=model_name or TextModel.CLAUDE_45_SONNET.value,
             openai_client=LiteLLMClient(custom_litellm_completion_args=extra_completion_params),  # type: ignore
         )
 
@@ -95,7 +95,7 @@ async def main():
         agent = Agent(
             name="Math Tutor",
             instructions="You provide help with math problems. Explain your reasoning at each step and include examples",
-            model="claude-3-7-sonnet-20250219",
+            model=TextModel.CLAUDE_45_SONNET.value,
             model_settings=ModelSettings(max_tokens=8000),
             mcp_servers=[server],
             # tools=[WebSearchTool(user_location={"type": "approximate", "city": "New York"})],
