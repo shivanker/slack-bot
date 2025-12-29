@@ -18,19 +18,6 @@ from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
 from llm_utils import generate_title
 
-# Agno imports
-from agno.agent.agent import Agent
-from agno.models.base import Model
-from agno.models.anthropic.claude import Claude
-from agno.models.openai.chat import OpenAIChat
-from agno.models.google.gemini import Gemini
-from agno.tools.duckduckgo import DuckDuckGoTools
-from agno.tools.yfinance import YFinanceTools
-from agno.tools.youtube import YouTubeTools
-from agno.tools.calculator import CalculatorTools
-from agno.tools.thinking import ThinkingTools
-from agno.storage.dynamodb import DynamoDbStorage
-
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
 HELP_PREAMBLE = "Welcome to SushiBot."
@@ -110,11 +97,6 @@ class ChatSession:
         )
         self.say = lambda text: self.client.chat_postMessage(
             channel=self.channel_id, thread_ts=self.thread_ts, text=text
-        )
-        # Initialize Agno storage
-        self.agno_storage = DynamoDbStorage(
-            table_name="agent_slackbot_agno_sessions",
-            region_name="us-east-1",
         )
 
     def fetch_conversation_history(self) -> tuple[list[ChatMessage], list[str]]:
@@ -357,16 +339,6 @@ class ChatSession:
         elif cmd == "\\debug":
             self.debug_mode ^= True
             say(text=f'Debug mode {"enabled" if self.debug_mode else "disabled"}.')
-        elif cmd == "\\agno":
-            self.agent = "agno" if self.agent != "agno" else ""
-            say(
-                text="Agno agent "
-                + ("enabled" if self.agent == "agno" else "disabled")
-                + "."
-            )
-        elif cmd == "\\noagno":
-            self.agent = ""
-            say(text="Agno agent disabled.")
         elif cmd == "\\help":
             say(
                 f"""
@@ -570,145 +542,6 @@ class ChatSession:
             channel=self.channel_id, ts=message_ts, text=current_message
         )
 
-    def _init_agno_agent(self) -> Agent:
-        """Initialize the Agno agent with the appropriate configuration."""
-        model: Model = Claude(id=TextModel.CLAUDE_45_SONNET.value)
-        if self.model.value.startswith("claude"):
-            model = Claude(id=self.model.value)
-        elif self.model.value.startswith("gemini"):
-            model = Gemini(id=self.model.value[len("gemini/") :], vertexai=True)
-        elif self.model.value.startswith("gpt"):
-            model = OpenAIChat(id=self.model.value, reasoning_effort="high")
-        else:
-            self.say(text=f"Unknown Agno model: {self.model.value}, using Sonnet 3.7.")
-        # Initialize the agent with Claude Sonnet model
-        agent = Agent(
-            model=model,
-            user_id=self.user_id,
-            session_id=self.thread_ts,  # Use thread_ts as session_id
-            description="You are a helpful agent running in a Slack bot.",
-            tools=[
-                DuckDuckGoTools(),
-                YFinanceTools(enable_all=True),
-                YouTubeTools(),
-                CalculatorTools(enable_all=True),
-                ThinkingTools(),
-                # Crawl4aiTools(max_length=None),
-            ],
-            add_datetime_to_instructions=True,
-            show_tool_calls=True,
-            tool_call_limit=25,
-            storage=self.agno_storage,
-            add_history_to_messages=True,
-            # reasoning=True,
-            telemetry=False,
-        )
-        return agent
-
-    def _handle_agno_streaming_response(self, agent: Agent, query: str) -> None:
-        """Handles streaming responses from the Agno agent."""
-        model = agent.model.id if agent.model else self.model.value
-        # Post initial message and track updates
-        message_ts = self.client.chat_postMessage(
-            channel=self.channel_id,
-            thread_ts=self.thread_ts,
-            text=f"[[ Agno {model} ]] Processing ...",
-        )["ts"]
-
-        last_update_time = time.time()
-        update_interval = 2.0  # Start with 2 seconds interval
-        start_time = time.time()
-        current_message = ""
-
-        for response in agent.run(query, stream=True):
-            # If in debug mode, show the raw response object
-            if self.debug_mode:
-                chunk = str(response) + "\n"
-            else:
-                # Otherwise just show the content
-                chunk = response.content or ""
-
-            # Update Slack thread status
-            self._set_chat_status(f"Agno {model} is processing...")
-
-            # Append the current chunk
-            current_message += chunk
-            current_time = time.time()
-
-            # Throttle Slack updates: Update message if interval passed or message is long
-            if (
-                current_time - last_update_time >= update_interval
-                or len(current_message) > 2400
-            ):
-                last_update_time = current_time
-                # If message exceeds limit, finalize current message and start a new one
-                if len(current_message) > 2400:
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=current_message,
-                    )
-                    # Start a new message
-                    message_ts = self.client.chat_postMessage(
-                        channel=self.channel_id,
-                        thread_ts=self.thread_ts,
-                        text=f"... [[ Agno {model} continuing ]] ...",
-                    )["ts"]
-                    current_message = ""  # Reset content for the new message
-                else:
-                    # Update the existing message with a progress indicator
-                    self.client.chat_update(
-                        channel=self.channel_id,
-                        ts=message_ts,
-                        text=f"{current_message} ... [[ Agno {model} processing ]] ...",
-                    )
-
-            # Adjust update interval if processing is taking a long time
-            if current_time - start_time > 60:
-                update_interval = 3.0
-
-        # Final update to remove the suffix
-        self.client.chat_update(
-            channel=self.channel_id, ts=message_ts, text=current_message
-        )
-
-    def _handle_agno_non_streaming_response(self, agent: Agent, query: str) -> None:
-        """Handles non-streaming responses from the Agno agent."""
-        response = agent.run(query, stream=False)
-
-        # If in debug mode, show the raw response object
-        if self.debug_mode:
-            full_text = str(response)
-        else:
-            # Otherwise just show the content
-            full_text = response.content or ""
-
-        # Send the main response content in chunks
-        for chunk in self.break_message(full_text):
-            self.say(text=chunk)
-
-    def _generate_from_agno(self, text: str, logger: Any) -> None:
-        """
-        Generates a response from the configured LLM using the provided messages.
-
-        Handles both streaming and non-streaming modes, updates Slack status,
-        and sets the thread title.
-
-        Args:
-            messages_with_instr: The list of messages formatted for the LLM API.
-            logger: The logger instance.
-        """
-        logger.debug(f"Generating response using model: {self.model.value}")
-
-        # Initialize Agno agent
-        agent = self._init_agno_agent()
-
-        # Generate response based on streaming mode
-        if self.streaming_mode:
-            self._handle_agno_streaming_response(agent, text)
-        else:
-            self._handle_agno_non_streaming_response(agent, text)
-
     def _generate_from_model(
         self, messages_with_instr: list[dict], logger: Any
     ) -> None:
@@ -786,11 +619,7 @@ class ChatSession:
             logger.error(f"Unknown command '{text}', treating as text input.")
 
         # Set initial status in Slack thread
-        self._set_chat_status(
-            f"{self.agent}[{self.model.value}] is generating ..."
-            if self.agent == "agno"
-            else f"{self.model.value} is generating ..."
-        )
+        self._set_chat_status(f"{self.model.value} is generating ...")
 
         # 4. Prepare messages for the LLM API
         # Combine system instructions with the fetched/merged message history
@@ -801,10 +630,7 @@ class ChatSession:
         logger.debug(f"Messages being sent to LLM:\n{messages_with_instr}")
 
         # 5. Generate and send the response using the LLM
-        if self.agent == "agno":
-            self._generate_from_agno(text, logger)
-        else:
-            self._generate_from_model(messages_with_instr, logger)
+        self._generate_from_model(messages_with_instr, logger)
 
         # 6. Generate and set the thread title after the response is complete
         self._set_thread_title(messages_with_instr)
