@@ -3,9 +3,12 @@ anthropic==0.75.0
 async-timeout==4.0.3
 aws_lambda_powertools==3.23.0
 black==24.4.2
+cloudpickle==3.1.2
 Crawl4AI==0.5.0.post8
 duckduckgo_search
+google-adk==1.21.0
 google-genai==1.56.0
+grpcio-status==1.76.0
 isort==5.13.2
 lxml_html_clean==0.4.1
 mypy==1.10.0
