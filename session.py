@@ -80,7 +80,6 @@ class ChatSession:
         self.thread_ts = thread_ts
         self.client = client
         self.logger = logger
-        self.streaming_mode = True
         self.show_thoughts = False
         self.debug_mode = False
         self.agent: str = ""
@@ -251,7 +250,6 @@ class ChatSession:
             "session_id": session_id,
             "agent": self.agent,
             "model": self.model.value,
-            "streaming_mode": self.streaming_mode,
             "show_thoughts": self.show_thoughts,
             "debug_mode": self.debug_mode,
         }
@@ -268,7 +266,6 @@ class ChatSession:
         if "Item" in item:
             settings = item["Item"]
             self.model = TextModel(settings["model"])
-            self.streaming_mode = settings["streaming_mode"]
             self.show_thoughts = settings["show_thoughts"]
             self.debug_mode = settings["debug_mode"]
             self.agent = settings["agent"]
@@ -317,14 +314,6 @@ class ChatSession:
         elif cmd == "\\deepseek":
             self.model = TextModel.DEEPSEEK_V32
             say(text="Model set to Deepseek v3.2.")
-        elif cmd == "\\stream":
-            self.streaming_mode ^= True
-            say(
-                text=f'Streaming mode {"enabled" if self.streaming_mode else "disabled"}.'
-            )
-        elif cmd == "\\nostream":
-            self.streaming_mode = False
-            say(text="Streaming mode disabled.")
         elif cmd == "\\thoughts":
             self.show_thoughts ^= True
             say(
@@ -370,7 +359,6 @@ class ChatSession:
 - \\opus: Use Claude 4.5 Opus for future messages.\n
 - \\gemini: Use Gemini 3 Pro for future messages.\n
 - \\deepseek: Use Deepseek v3.2 for future messages.\n
-- \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
 - \\thoughts: Toggle thoughts display. When enabled, thoughts will be shared.\n
 - \\debug: Toggle debug mode. When enabled, raw agent responses will be shown.\n
@@ -430,28 +418,7 @@ class ChatSession:
             extra_completion_params["max_completion_tokens"] = 65536
         return extra_completion_params
 
-    def _handle_non_streaming_response(
-        self, messages_with_instr: list[dict], extra_completion_params: dict
-    ) -> None:
-        """Handles the response from the LLM when streaming is disabled."""
-        response = completion(
-            model=self.model.value,
-            messages=messages_with_instr,
-            **extra_completion_params,
-        )
-        reasoning_content = response.choices[0].get("reasoning_content", "") if self.show_thoughts else ""  # type: ignore
-        full_text: str = response.choices[0].message.content or ""  # type: ignore
-
-        if reasoning_content:
-            formatted_reasoning = f"<thinking>\n{reasoning_content}\n</thinking>\n\n"
-            for chunk in self.break_message(formatted_reasoning):
-                self.say(text=chunk)
-
-        # Send the main response content in chunks
-        for chunk in self.break_message(full_text):
-            self.say(text=chunk)
-
-    def _handle_streaming_response(
+    def _handle_model_streaming_response(
         self, messages_with_instr: list[dict], extra_completion_params: dict
     ) -> None:
         """Handles the response from the LLM when streaming is enabled."""
@@ -636,7 +603,7 @@ class ChatSession:
         """
         Generates a response from the configured LLM using the provided messages.
 
-        Handles both streaming and non-streaming modes, updates Slack status,
+        Handles both streaming and non-streaming modes (legacy), updates Slack status,
         and sets the thread title.
 
         Args:
@@ -646,14 +613,7 @@ class ChatSession:
         extra_completion_params = self._get_completion_params()
 
         # Generate response based on streaming mode
-        if self.streaming_mode:
-            self._handle_streaming_response(
-                messages_with_instr, extra_completion_params
-            )
-        else:
-            self._handle_non_streaming_response(
-                messages_with_instr, extra_completion_params
-            )
+        self._handle_model_streaming_response(messages_with_instr, extra_completion_params)
 
     def _set_chat_status(self, status: str) -> None:
         """Sets the chat status in Slack."""
