@@ -1,3 +1,4 @@
+import asyncio
 import re
 import os
 import time
@@ -17,6 +18,8 @@ from pdf_utils import extract_text_from_pdf
 from web_reader import scrape_text
 from ytsubs import is_youtube_video, yt_transcript
 from llm_utils import generate_title
+from adk_agents import get_agent, list_agents
+from adk_agents.utils import run_agent_async
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
@@ -339,6 +342,22 @@ class ChatSession:
         elif cmd == "\\debug":
             self.debug_mode ^= True
             say(text=f'Debug mode {"enabled" if self.debug_mode else "disabled"}.')
+        elif cmd == "\\agent" or cmd == "\\agents":
+            # Show available agents
+            available = ", ".join(list_agents()) or "none"
+            current = self.agent or "none"
+            say(text=f"Available agents: [{available}]. Current: [{current}]. Use \\agent <name> to set.")
+        elif cmd.startswith("\\agent "):
+            agent_name = cmd[len("\\agent ") :].strip().lower()
+            if agent_name in ("none", "off", "clear", ""):
+                self.agent = ""
+                say(text="Agent cleared. Using default LLM mode.")
+            elif get_agent(agent_name):
+                self.agent = agent_name
+                say(text=f"Agent set to [{agent_name}].")
+            else:
+                available = ", ".join(list_agents())
+                say(text=f"Unknown agent [{agent_name}]. Available: [{available}].")
         elif cmd == "\\help":
             say(
                 f"""
@@ -542,6 +561,75 @@ class ChatSession:
             channel=self.channel_id, ts=message_ts, text=current_message
         )
 
+    def _generate_from_adk_agent(
+        self, messages: list[ChatMessage], logger: Any
+    ) -> None:
+        """
+        Generates a response from an ADK agent using the conversation history.
+
+        Args:
+            messages: The list of ChatMessage objects from conversation history.
+            logger: The logger instance.
+        """
+        agent = get_agent(self.agent)
+        if not agent:
+            logger.error(f"Agent '{self.agent}' not found, falling back to LLM.")
+            self.agent = ""
+            return
+
+        logger.debug(f"Generating response using ADK agent: {self.agent}")
+        self._set_chat_status(f"ADK agent [{self.agent}] is generating...")
+
+        # Get the latest user message as the query
+        query = messages[-1].content if messages else ""
+
+        # Post initial message
+        message_ts = self.client.chat_postMessage(
+            channel=self.channel_id,
+            thread_ts=self.thread_ts,
+            text=f"[[ ADK: {self.agent} ]] Processing ...",
+        )["ts"]
+
+        async def run_agent():
+            final_response = "Agent did not produce a response."
+            async for event in run_agent_async(
+                agent=agent,
+                user_id=self.user_id,
+                session_id=self.thread_ts,
+                query=query,
+            ):
+                if self.debug_mode and event.content:
+                    logger.debug(f"ADK Event: {event}")
+                if event.is_final_response():
+                    if event.content and event.content.parts:
+                        final_response = event.content.parts[0].text
+                    elif event.actions and event.actions.escalate:
+                        final_response = f"Agent escalated: {event.error_message or 'No specific message.'}"
+                    break
+            return final_response
+
+        # Run the async agent
+        try:
+            response_text = asyncio.run(run_agent())
+        except Exception as e:
+            logger.error(f"Error running ADK agent: {e}")
+            response_text = f"Error running agent: {e}"
+
+        # Update the message with the response
+        for chunk in self.break_message(response_text):
+            self.client.chat_update(
+                channel=self.channel_id,
+                ts=message_ts,
+                text=chunk,
+            )
+            # If there are more chunks, post new messages
+            if chunk != self.break_message(response_text)[-1]:
+                message_ts = self.client.chat_postMessage(
+                    channel=self.channel_id,
+                    thread_ts=self.thread_ts,
+                    text="...",
+                )["ts"]
+
     def _generate_from_model(
         self, messages_with_instr: list[dict], logger: Any
     ) -> None:
@@ -629,8 +717,14 @@ class ChatSession:
         ]
         logger.debug(f"Messages being sent to LLM:\n{messages_with_instr}")
 
-        # 5. Generate and send the response using the LLM
-        self._generate_from_model(messages_with_instr, logger)
+        # 5. Generate and send the response
+        # Route to ADK agent if one is configured
+        if self.agent and get_agent(self.agent):
+            # TODO: Figure out a good way to pass the system instruction to the agent
+            self._generate_from_adk_agent(messages_with_instr, logger)
+        else:
+            # Use default LLM flow
+            self._generate_from_model(messages_with_instr, logger)
 
         # 6. Generate and set the thread title after the response is complete
         self._set_thread_title(messages_with_instr)
