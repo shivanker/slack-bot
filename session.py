@@ -400,14 +400,14 @@ class ChatSession:
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
-        if self.model.value.startswith("gpt"):
+        if self.model.value.startswith("gpt") or self.model.value.startswith("gemini"):
             extra_completion_params["reasoning_effort"] = "high"
         elif self.model.value.startswith("claude"):
             extra_completion_params["thinking"] = {
                 "type": "enabled",
-                "budget_tokens": 32000,
+                "budget_tokens": 16384,
             }
-            extra_completion_params["max_completion_tokens"] = 64000
+            extra_completion_params["max_completion_tokens"] = 65536
         return extra_completion_params
 
     def _handle_non_streaming_response(
