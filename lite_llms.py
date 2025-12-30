@@ -12,4 +12,4 @@ class TextModel(Enum):
     # GROQ_LLAMA3_8B = "groq/llama3-8b-8192"
     # LLAMA3_70B = "fireworks_ai/llama-v3-70b-instruct"
     # LLAMA31_405B = "fireworks_ai/llama-v3p1-405b-instruct"
-    DEEPSEEK_R1 = "fireworks_ai/deepseek-r1"
+    DEEPSEEK_V32 = "fireworks_ai/deepseek-v3p2"

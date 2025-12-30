@@ -311,8 +311,8 @@ class ChatSession:
             self.model = TextModel.GEMINI_3_PRO
             say(text="Model set to Gemini 3 Pro.")
         elif cmd == "\\deepseek":
-            self.model = TextModel.DEEPSEEK_R1
-            say(text="Model set to Deepseek R1.")
+            self.model = TextModel.DEEPSEEK_V32
+            say(text="Model set to Deepseek v3.2.")
         elif cmd == "\\stream":
             self.streaming_mode ^= True
             say(
@@ -349,7 +349,7 @@ class ChatSession:
 - \\sonnet: Use Claude 4.5 Sonnet for future messages.\n
 - \\opus: Use Claude 4.5 Opus for future messages.\n
 - \\gemini: Use Gemini 3 Pro for future messages.\n
-- \\deepseek: Use Deepseek R1 for future messages.\n
+- \\deepseek: Use Deepseek v3.2 for future messages.\n
 - \\stream: Toggle streaming mode. In streaming mode, the bot will send you a message every time it generates a new token.\n
 - \\extract: [debug] Extract text from a URL or a YT video.\n
 - \\thoughts: Toggle thoughts display. When enabled, thoughts will be shared.\n
