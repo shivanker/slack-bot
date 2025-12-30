@@ -61,13 +61,13 @@ def handle_message(body, say, logger):
         return
 
     try:
-        user_session = ChatSession(user_id, channel_id, thread_ts, client)
+        user_session = ChatSession(user_id, channel_id, thread_ts, client, logger)
         client.assistant_threads_setStatus(
             channel_id=channel_id,
             thread_ts=thread_ts,
             status="processing request...",
         )
-        user_session.process_direct_message(text, logger)
+        user_session.process_direct_message(text)
         client.assistant_threads_setStatus(
             channel_id=channel_id,
             thread_ts=thread_ts,

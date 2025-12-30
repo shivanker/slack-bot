@@ -73,12 +73,13 @@ def extract(text):
 
 class ChatSession:
     def __init__(
-        self, user_id: str, channel_id: str, thread_ts: str, client: WebClient
+        self, user_id: str, channel_id: str, thread_ts: str, client: WebClient, logger: Any
     ):
         self.user_id = user_id
         self.channel_id = channel_id
         self.thread_ts = thread_ts
         self.client = client
+        self.logger = logger
         self.streaming_mode = True
         self.show_thoughts = False
         self.debug_mode = False
@@ -108,7 +109,7 @@ class ChatSession:
                 channel=self.channel_id, ts=self.thread_ts, limit=100, inclusive=True
             )
         except Exception as e:
-            logger.error(f"Error fetching conversation history: {str(e)}")
+            self.logger.error(f"Error fetching conversation history: {str(e)}")
             raise e
         try:
             messages = conversation_history["messages"]
@@ -153,7 +154,7 @@ class ChatSession:
                                             continue
 
                                         mimetype = check_mimetype(url)
-                                        logger.info(
+                                        self.logger.info(
                                             f"Found link [{url}] of type [{mimetype}]."
                                         )
                                         if mimetype.startswith(
@@ -174,13 +175,13 @@ class ChatSession:
                                         content = None
                                         tag = None
                                         if is_youtube_video(url):
-                                            logger.debug(
+                                            self.logger.debug(
                                                 f"Fetching youtube transcript for [{url}]."
                                             )
                                             content = yt_transcript(url)
                                             tag = "YoutubeTranscript"
                                         else:
-                                            logger.debug(f"Reading text from [{url}].")
+                                            self.logger.debug(f"Reading text from [{url}].")
                                             content = scrape_text(url)
                                             tag = "ScrapedTextFromURL"
                                         if content:
@@ -192,16 +193,16 @@ class ChatSession:
 
                 files = message.get("files", [])
                 for file in files:
-                    logger.debug(f"Files:\n{file}")
+                    self.logger.debug(f"Files:\n{file}")
                     msg_content = None
                     mimetype = file.get("mimetype", "")
                     file_url = file.get("url_private")
                     file_name = file.get("name", "Unknown File")
-                    logger.info(f"Found file [{file_name}] of type [{mimetype}].")
+                    self.logger.info(f"Found file [{file_name}] of type [{mimetype}].")
                     if mimetype.startswith("image/"):
                         msg_content = f"<Image name:{file_name}/>"
                         # TODO: Images are not supported yet.
-                        logger.error("Found image attachment.")
+                        self.logger.error("Found image attachment.")
                     elif mimetype == "text/plain":
                         content = download_file(file_url).decode(
                             "utf-8", errors="replace"
@@ -231,11 +232,11 @@ class ChatSession:
                 else:
                     merged_messages.append(chatmsg)
                     prev_role = chatmsg.role
-            logger.debug(f"<history>\n{merged_messages}</history>")
+            self.logger.debug(f"<history>\n{merged_messages}</history>")
             return (merged_messages, commands)
 
         except Exception as e:
-            logger.error(f"Error processing conversation: {str(e)}")
+            self.logger.error(f"Error processing conversation: {str(e)}")
             raise e
 
     def is_command(self, text):
@@ -256,9 +257,9 @@ class ChatSession:
         }
         try:
             settings_table.put_item(Item=item)
-            logger.info(f"Saved settings for user {self.user_id}.")
+            self.logger.info(f"Saved settings for user {self.user_id}.")
         except Exception as e:
-            logger.error(f"Failed to save settings for user {self.user_id}: {e}")
+            self.logger.error(f"Failed to save settings for user {self.user_id}: {e}")
 
     def _load_settings(self, session_id: str = "default"):
         item = settings_table.get_item(
@@ -272,7 +273,7 @@ class ChatSession:
             self.debug_mode = settings["debug_mode"]
             self.agent = settings["agent"]
         else:
-            logger.error(f"No settings found for user {self.user_id}.")
+            self.logger.error(f"No settings found for user {self.user_id}.")
 
     def process_command(self, text: str, say=lambda text: None) -> bool:
         """Processes a command string.
@@ -562,22 +563,21 @@ class ChatSession:
         )
 
     def _generate_from_adk_agent(
-        self, messages: list[ChatMessage], logger: Any
+        self, messages: list[ChatMessage]
     ) -> None:
         """
         Generates a response from an ADK agent using the conversation history.
 
         Args:
             messages: The list of ChatMessage objects from conversation history.
-            logger: The logger instance.
         """
         agent = get_agent(self.agent)
         if not agent:
-            logger.error(f"Agent '{self.agent}' not found, falling back to LLM.")
+            self.logger.error(f"Agent '{self.agent}' not found, falling back to LLM.")
             self.agent = ""
             return
 
-        logger.debug(f"Generating response using ADK agent: {self.agent}")
+        self.logger.debug(f"Generating response using ADK agent: {self.agent}")
         self._set_chat_status(f"ADK agent [{self.agent}] is generating...")
 
         # Get the latest user message as the query
@@ -599,7 +599,7 @@ class ChatSession:
                 query=query,
             ):
                 if self.debug_mode and event.content:
-                    logger.debug(f"ADK Event: {event}")
+                    self.logger.debug(f"ADK Event: {event}")
                 if event.is_final_response():
                     if event.content and event.content.parts:
                         final_response = event.content.parts[0].text
@@ -612,7 +612,7 @@ class ChatSession:
         try:
             response_text = asyncio.run(run_agent())
         except Exception as e:
-            logger.error(f"Error running ADK agent: {e}")
+            self.logger.error(f"Error running ADK agent: {e}")
             response_text = f"Error running agent: {e}"
 
         # Update the message with the response
@@ -631,7 +631,7 @@ class ChatSession:
                 )["ts"]
 
     def _generate_from_model(
-        self, messages_with_instr: list[dict], logger: Any
+        self, messages_with_instr: list[dict]
     ) -> None:
         """
         Generates a response from the configured LLM using the provided messages.
@@ -641,9 +641,8 @@ class ChatSession:
 
         Args:
             messages_with_instr: The list of messages formatted for the LLM API.
-            logger: The logger instance.
         """
-        logger.debug(f"Generating response using model: {self.model.value}")
+        self.logger.debug(f"Generating response using model: {self.model.value}")
         extra_completion_params = self._get_completion_params()
 
         # Generate response based on streaming mode
@@ -665,7 +664,7 @@ class ChatSession:
                 status=status,
             )
         except Exception as e:
-            logger.warning(f"Could not set thread status: {e}")  # Non-fatal
+            self.logger.warning(f"Could not set thread status: {e}")  # Non-fatal
 
     def _set_thread_title(self, messages_with_instr: list[dict]) -> None:
         """Sets the thread title based on the messages."""
@@ -676,11 +675,11 @@ class ChatSession:
                 thread_ts=self.thread_ts,
                 title=title,
             )
-            logger.info(f"Set thread title to: {title}")
+            self.logger.info(f"Set thread title to: {title}")
         except Exception as e:
-            logger.error(f"Failed to generate or set thread title: {e}")
+            self.logger.error(f"Failed to generate or set thread title: {e}")
 
-    def process_direct_message(self, text: str, logger: Any) -> None:
+    def process_direct_message(self, text: str) -> None:
         """Processes an incoming direct message or mention in a thread.
 
         Fetches history, handles commands, generates a response using the LLM,
@@ -688,7 +687,6 @@ class ChatSession:
 
         Args:
             text: The text content of the incoming Slack message.
-            logger: The logger instance.
         """
         # 1. Load settings for the user
         self._load_settings()
@@ -704,7 +702,7 @@ class ChatSession:
                 return
             # If process_command returned False, it's an unknown command.
             # We'll treat it as regular text input for the LLM below.
-            logger.error(f"Unknown command '{text}', treating as text input.")
+            self.logger.error(f"Unknown command '{text}', treating as text input.")
 
         # Set initial status in Slack thread
         self._set_chat_status(f"{self.model.value} is generating ...")
@@ -715,16 +713,16 @@ class ChatSession:
             msg.to_openai_format()
             for msg in ([ChatMessage.from_user(self.system_instr)] + messages)
         ]
-        logger.debug(f"Messages being sent to LLM:\n{messages_with_instr}")
+        self.logger.debug(f"Messages being sent to LLM:\n{messages_with_instr}")
 
         # 5. Generate and send the response
         # Route to ADK agent if one is configured
         if self.agent and get_agent(self.agent):
             # TODO: Figure out a good way to pass the system instruction to the agent
-            self._generate_from_adk_agent(messages_with_instr, logger)
+            self._generate_from_adk_agent(messages_with_instr)
         else:
             # Use default LLM flow
-            self._generate_from_model(messages_with_instr, logger)
+            self._generate_from_model(messages_with_instr)
 
         # 6. Generate and set the thread title after the response is complete
         self._set_thread_title(messages_with_instr)
