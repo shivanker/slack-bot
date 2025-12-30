@@ -24,36 +24,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install pip -U
 RUN pip install uv
 
-# Copy project build files
-COPY owl/pyproject.toml .
-COPY owl/README.md .
+#####################
+#### INSTALL OWL ####
+#####################
+# # Copy project build files
+# COPY owl/pyproject.toml .
+# COPY owl/README.md .
 
-# Create virtual environment and install dependencies
-RUN uv venv .venv --python=3.12 && \
-    . .venv/bin/activate && \
-    uv pip install -e .
-# TODO: Not sure if venv is needed above
-# RUN uv pip install --system -e .
+# # Create virtual environment and install dependencies
+# RUN uv venv .venv --python=3.12 && \
+#     . .venv/bin/activate && \
+#     uv pip install -e .
+# # TODO: Not sure if venv is needed above
+# # RUN uv pip install --system -e .
 
-# Copy project runtime files
-COPY owl/owl/ ./owl/
-COPY owl/licenses/ ./licenses/
-COPY owl/assets/ ./assets/
-COPY owl/examples/ ./examples/
+# # Copy project runtime files
+# COPY owl/owl/ ./owl/
+# COPY owl/licenses/ ./licenses/
+# COPY owl/assets/ ./assets/
+# COPY owl/examples/ ./examples/
 
-# Create startup script
-RUN printf '#!/bin/bash\nxvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" python "$@"' > /usr/local/bin/xvfb-python && \
-    chmod +x /usr/local/bin/xvfb-python
+# # Create startup script
+# RUN printf '#!/bin/bash\nxvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" python "$@"' > /usr/local/bin/xvfb-python && \
+#     chmod +x /usr/local/bin/xvfb-python
 
-# Create welcome script
-RUN printf '#!/bin/bash\necho "Welcome to the OWL Project Docker environment!"\necho "Welcome to OWL Project Docker environment!"\necho ""\necho "Available scripts:"\nls -1 *.py | grep -v "__" | sed "s/^/- /"\necho ""\necho "Run examples:"\necho "  xvfb-python run.py                     # Run default script"\necho "  xvfb-python run_deepseek_example.py      # Run DeepSeek example"\necho ""\necho "Or use custom query:"\necho "  xvfb-python run.py \"Your question\""\necho ""' > /usr/local/bin/owl-welcome && \
-    chmod +x /usr/local/bin/owl-welcome
+# # Create welcome script
+# RUN printf '#!/bin/bash\necho "Welcome to the OWL Project Docker environment!"\necho "Welcome to OWL Project Docker environment!"\necho ""\necho "Available scripts:"\nls -1 *.py | grep -v "__" | sed "s/^/- /"\necho ""\necho "Run examples:"\necho "  xvfb-python run.py                     # Run default script"\necho "  xvfb-python run_deepseek_example.py      # Run DeepSeek example"\necho ""\necho "Or use custom query:"\necho "  xvfb-python run.py \"Your question\""\necho ""' > /usr/local/bin/owl-welcome && \
+#     chmod +x /usr/local/bin/owl-welcome
 
-# Set working directory
-WORKDIR /app/owl
+# # Set working directory
+# WORKDIR /app/owl
 
-# Camel Owl startup command
-# CMD ["/bin/bash", "-c", "owl-welcome && /bin/bash"]
+# # Camel Owl startup command
+# # CMD ["/bin/bash", "-c", "owl-welcome && /bin/bash"]
+
+#####################
+#### END OWL ########
+#####################
 
 # Include global arg in this stage of the build
 ARG FUNCTION_DIR="/var/task"
