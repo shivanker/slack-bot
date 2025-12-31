@@ -69,8 +69,12 @@ class CustomModelProvider(ModelProvider):
         extra_completion_params: dict[str, Any] = {
             "max_tokens": 128000,
         }
-        if model_name and model_name.startswith("gpt"):
-            extra_completion_params["reasoning_effort"] = "high" # TODO
+        if (
+            model_name
+            and model_name.startswith("gpt")
+            or model_name.startswith("gemini")
+        ):
+            extra_completion_params["reasoning_effort"] = "high"
         elif model_name == TextModel.CLAUDE_45_SONNET.value:
             extra_completion_params["thinking"] = {
                 "type": "enabled",
