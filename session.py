@@ -534,6 +534,7 @@ class ChatSession:
     ) -> None:
         """
         Generates a response from an ADK agent using the conversation history.
+        Streams chunks to Slack as they arrive, similar to model streaming.
 
         Args:
             messages: The list of ChatMessage objects from conversation history.
@@ -557,8 +558,19 @@ class ChatSession:
             text=f"[[ ADK: {self.agent} ]] Processing ...",
         )["ts"]
 
-        async def run_agent():
-            final_response = "Agent did not produce a response."
+        # Streaming state - we need to track this outside the async function
+        # to update Slack from the sync context
+        streaming_state = {
+            "current_message": "",
+            "total_posted": "",  # All text that's been finalized/posted
+            "message_ts": message_ts,
+            "last_update_time": time.time(),
+            "error": None,
+        }
+        update_interval = 2.0
+
+        async def run_agent_streaming():
+            nonlocal streaming_state
             async for event in run_agent_async(
                 agent=agent,
                 user_id=self.user_id,
@@ -567,35 +579,64 @@ class ChatSession:
             ):
                 if self.debug_mode and event.content:
                     self.logger.debug(f"ADK Event: {event}")
+
+                # Check for final response first - it repeats all content, so skip it
                 if event.is_final_response():
-                    if event.content and event.content.parts:
-                        final_response = event.content.parts[0].text
-                    elif event.actions and event.actions.escalate:
-                        final_response = f"Agent escalated: {event.error_message or 'No specific message.'}"
+                    if event.actions and event.actions.escalate:
+                        streaming_state["current_message"] += f"\n\nAgent escalated: {event.error_message or 'No specific message.'}"
                     break
-            return final_response
+
+                # Intermediate chunks are incremental (new content only)
+                if event.content and event.content.parts:
+                    new_chunk = event.content.parts[0].text or ""
+                    streaming_state["current_message"] += new_chunk
+                    current_time = time.time()
+
+                    # Throttle Slack updates
+                    if (
+                        current_time - streaming_state["last_update_time"] >= update_interval
+                        or len(streaming_state["current_message"]) > 2400
+                    ):
+                        streaming_state["last_update_time"] = current_time
+
+                        if len(streaming_state["current_message"]) > 2400:
+                            # Finalize current message and start new one
+                            self.client.chat_update(
+                                channel=self.channel_id,
+                                ts=streaming_state["message_ts"],
+                                text=streaming_state["current_message"],
+                            )
+                            # Track what we've posted
+                            streaming_state["total_posted"] += streaming_state["current_message"]
+                            # Start a new message
+                            streaming_state["message_ts"] = self.client.chat_postMessage(
+                                channel=self.channel_id,
+                                thread_ts=self.thread_ts,
+                                text=f"... [[ ADK: {self.agent} generating ]] ...",
+                            )["ts"]
+                            streaming_state["current_message"] = ""
+                        else:
+                            # Update existing message with progress indicator
+                            self.client.chat_update(
+                                channel=self.channel_id,
+                                ts=streaming_state["message_ts"],
+                                text=f"{streaming_state['current_message']} ... [[ {self.agent} generating ]] ...",
+                            )
 
         # Run the async agent
         try:
-            response_text = asyncio.run(run_agent())
+            asyncio.run(run_agent_streaming())
         except Exception as e:
             self.logger.error(f"Error running ADK agent: {e}")
-            response_text = f"Error running agent: {e}"
+            streaming_state["current_message"] = f"Error running agent: {e}"
 
-        # Update the message with the response
-        for chunk in self.break_message(response_text):
-            self.client.chat_update(
-                channel=self.channel_id,
-                ts=message_ts,
-                text=chunk,
-            )
-            # If there are more chunks, post new messages
-            if chunk != self.break_message(response_text)[-1]:
-                message_ts = self.client.chat_postMessage(
-                    channel=self.channel_id,
-                    thread_ts=self.thread_ts,
-                    text="...",
-                )["ts"]
+        # Final update to remove the progress indicator
+        final_text = streaming_state["current_message"] or "Agent did not produce a response."
+        self.client.chat_update(
+            channel=self.channel_id,
+            ts=streaming_state["message_ts"],
+            text=final_text,
+        )
 
     def _generate_from_model(
         self, messages_with_instr: list[dict]
