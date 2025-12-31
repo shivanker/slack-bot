@@ -20,6 +20,7 @@ from ytsubs import is_youtube_video, yt_transcript
 from llm_utils import generate_title
 from adk_agents import get_agent, list_agents
 from adk_agents.utils import run_agent_async
+from system_instructions import *
 
 BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
 ERROR_HEADER = "Something went wrong.\nHere's the traceback for the brave of heart:\n"
@@ -73,7 +74,12 @@ def extract(text):
 
 class ChatSession:
     def __init__(
-        self, user_id: str, channel_id: str, thread_ts: str, client: WebClient, logger: Any
+        self,
+        user_id: str,
+        channel_id: str,
+        thread_ts: str,
+        client: WebClient,
+        logger: Any,
     ):
         self.user_id = user_id
         self.channel_id = channel_id
@@ -88,15 +94,10 @@ class ChatSession:
         self.user_name = sender_info["user"]["real_name"]
         self.model = TextModel.GEMINI_3_PRO
         self.system_instr = (
-            "You are a helpful assistant called SushiBot running as a Slack App. Keep the "
-            "conversation natural and flowing, don't respond with robotic or closing statements like "
-            "'Is there anything else?'. You are a friend, not a bot. "
-            "Whatever you say will be sent back as a text to the user. Feel free to use rich text "
-            "formatting appropriate for the Slack API. "
-            # If you don't know something, look it up on the \
-            # internet. If Search results are not useful, try to navigate to known expert \
-            # websites to fetch real, up-to-date data, and then root your answers to those facts."
-            "Here goes the chat history so far and the latest activity..."
+            SLACKBOT_SYSTEM_INSTRUCTION
+            + "Keep the conversation natural and flowing, don't respond with robotic "
+            "or closing statements like 'Is there anything else?'. "
+            + SYSTEM_INSTRUCTION_EPILOGUE
         )
         self.say = lambda text: self.client.chat_postMessage(
             channel=self.channel_id, thread_ts=self.thread_ts, text=text
@@ -180,7 +181,9 @@ class ChatSession:
                                             content = yt_transcript(url)
                                             tag = "YoutubeTranscript"
                                         else:
-                                            self.logger.debug(f"Reading text from [{url}].")
+                                            self.logger.debug(
+                                                f"Reading text from [{url}]."
+                                            )
                                             content = scrape_text(url)
                                             tag = "ScrapedTextFromURL"
                                         if content:
@@ -336,7 +339,9 @@ class ChatSession:
             # Show available agents
             available = ", ".join(list_agents()) or "none"
             current = self.agent or "none"
-            say(text=f"Available agents: [{available}]. Current: [{current}]. Use \\agent <name> to set.")
+            say(
+                text=f"Available agents: [{available}]. Current: [{current}]. Use \\agent <name> to set."
+            )
         elif cmd.startswith("\\agent "):
             agent_name = cmd[len("\\agent ") :].strip().lower()
             if agent_name in ("none", "off", "clear", ""):
@@ -529,9 +534,7 @@ class ChatSession:
             channel=self.channel_id, ts=message_ts, text=current_message
         )
 
-    def _generate_from_adk_agent(
-        self, messages: list[ChatMessage]
-    ) -> None:
+    def _generate_from_adk_agent(self, messages: list[ChatMessage]) -> None:
         """
         Generates a response from an ADK agent using the conversation history.
         Streams chunks to Slack as they arrive, similar to model streaming.
@@ -583,7 +586,9 @@ class ChatSession:
                 # Check for final response first - it repeats all content, so skip it
                 if event.is_final_response():
                     if event.actions and event.actions.escalate:
-                        streaming_state["current_message"] += f"\n\nAgent escalated: {event.error_message or 'No specific message.'}"
+                        streaming_state[
+                            "current_message"
+                        ] += f"\n\nAgent escalated: {event.error_message or 'No specific message.'}"
                     break
 
                 # Intermediate chunks are incremental (new content only)
@@ -594,7 +599,8 @@ class ChatSession:
 
                     # Throttle Slack updates
                     if (
-                        current_time - streaming_state["last_update_time"] >= update_interval
+                        current_time - streaming_state["last_update_time"]
+                        >= update_interval
                         or len(streaming_state["current_message"]) > 2400
                     ):
                         streaming_state["last_update_time"] = current_time
@@ -607,13 +613,17 @@ class ChatSession:
                                 text=streaming_state["current_message"],
                             )
                             # Track what we've posted
-                            streaming_state["total_posted"] += streaming_state["current_message"]
+                            streaming_state["total_posted"] += streaming_state[
+                                "current_message"
+                            ]
                             # Start a new message
-                            streaming_state["message_ts"] = self.client.chat_postMessage(
-                                channel=self.channel_id,
-                                thread_ts=self.thread_ts,
-                                text=f"... [[ ADK: {self.agent} generating ]] ...",
-                            )["ts"]
+                            streaming_state["message_ts"] = (
+                                self.client.chat_postMessage(
+                                    channel=self.channel_id,
+                                    thread_ts=self.thread_ts,
+                                    text=f"... [[ ADK: {self.agent} generating ]] ...",
+                                )["ts"]
+                            )
                             streaming_state["current_message"] = ""
                         else:
                             # Update existing message with progress indicator
@@ -631,16 +641,16 @@ class ChatSession:
             streaming_state["current_message"] = f"Error running agent: {e}"
 
         # Final update to remove the progress indicator
-        final_text = streaming_state["current_message"] or "Agent did not produce a response."
+        final_text = (
+            streaming_state["current_message"] or "Agent did not produce a response."
+        )
         self.client.chat_update(
             channel=self.channel_id,
             ts=streaming_state["message_ts"],
             text=final_text,
         )
 
-    def _generate_from_model(
-        self, messages_with_instr: list[dict]
-    ) -> None:
+    def _generate_from_model(self, messages_with_instr: list[dict]) -> None:
         """
         Generates a response from the configured LLM using the provided messages.
 
@@ -654,7 +664,9 @@ class ChatSession:
         extra_completion_params = self._get_completion_params()
 
         # Generate response based on streaming mode
-        self._handle_model_streaming_response(messages_with_instr, extra_completion_params)
+        self._handle_model_streaming_response(
+            messages_with_instr, extra_completion_params
+        )
 
     def _set_chat_status(self, status: str) -> None:
         """Sets the chat status in Slack."""
@@ -719,8 +731,7 @@ class ChatSession:
         # 5. Generate and send the response
         # Route to ADK agent if one is configured
         if self.agent and get_agent(self.agent):
-            # TODO: Figure out a good way to pass the system instruction to the agent
-            self._generate_from_adk_agent(messages_with_instr)
+            self._generate_from_adk_agent(messages)
         else:
             # Use default LLM flow
             self._generate_from_model(messages_with_instr)
