@@ -65,19 +65,17 @@ RUN pip install uv
 # Include global arg in this stage of the build
 ARG FUNCTION_DIR="/var/task"
 # Set working directory to function root directory
+RUN mkdir -p ${FUNCTION_DIR}
 WORKDIR ${FUNCTION_DIR}
 
-# Copy function code
-RUN mkdir -p ${FUNCTION_DIR}
-COPY requirements.txt ${FUNCTION_DIR}
-COPY *.py ${FUNCTION_DIR}
-COPY adk_agents ${FUNCTION_DIR}/
-
-# Install the function's dependencies
+# Install deps
 RUN pip install --target ${FUNCTION_DIR} awslambdaric
-
-# Install the specified packages
+COPY requirements.txt ${FUNCTION_DIR}
 RUN pip install -r requirements.txt
+
+# Copy function code after installing requirements for better caching
+COPY *.py ${FUNCTION_DIR}
+COPY adk_agents/ ${FUNCTION_DIR}/adk_agents/
 
 ENTRYPOINT [ "/usr/local/bin/python", "-m", "awslambdaric" ]
 CMD [ "lambda_function.handler" ]
