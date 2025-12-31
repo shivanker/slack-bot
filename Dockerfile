@@ -71,6 +71,7 @@ WORKDIR ${FUNCTION_DIR}
 RUN mkdir -p ${FUNCTION_DIR}
 COPY requirements.txt ${FUNCTION_DIR}
 COPY *.py ${FUNCTION_DIR}
+COPY adk_agents ${FUNCTION_DIR}/
 
 # Install the function's dependencies
 RUN pip install --target ${FUNCTION_DIR} awslambdaric
