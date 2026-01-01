@@ -577,9 +577,7 @@ class ChatSession:
                 session_id=self.thread_ts,
                 history=messages,
             ):
-                if self.debug_mode and event.content:
-                    self.logger.debug(f"ADK Event: {event}")
-
+                self.logger.debug(f"ADK Event: {event}")
                 # Intermediate chunks are incremental (new content only)
                 if event.content and event.content.parts:
                     new_chunk = event.content.parts[0].text or ""
