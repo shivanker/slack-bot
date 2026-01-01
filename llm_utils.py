@@ -13,7 +13,7 @@ logger = Logger()
 litellm.modify_params = True
 
 
-def generate_title(messages: list[dict[str, Any]]) -> str:
+def generate_title(messages: list[ChatMessage]) -> str:
     """Generate a title for a chat thread.
 
     Args:
@@ -23,11 +23,14 @@ def generate_title(messages: list[dict[str, Any]]) -> str:
         A title for the chat thread.
     """
     try:
-        messages += [
+        messages = [
             ChatMessage.from_user(
-                "Generate a title for the above chat thread in less than 7 words."
-            ).to_openai_format()
-        ]
+                "I will give you a chat thread below,\n"
+                "and your job is to generate a title for it in less than 7 words.\n"
+                "Only respond with the title of the chat thread, nothing else.\n"
+                "Here goes the chat thread below.\n\n"
+            )
+        ] + messages
         response = completion(
             model=TextModel.GEMINI_3_FLASH.value,
             messages=messages,

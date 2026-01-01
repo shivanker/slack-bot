@@ -684,10 +684,10 @@ class ChatSession:
         except Exception as e:
             self.logger.warning(f"Could not set thread status: {e}")  # Non-fatal
 
-    def _set_thread_title(self, messages_with_instr: list[dict]) -> None:
+    def _set_thread_title(self, messages: list[ChatMessage]) -> None:
         """Sets the thread title based on the messages."""
         try:
-            title = generate_title(messages_with_instr)
+            title = generate_title(messages)
             self.client.assistant_threads_setTitle(
                 channel_id=self.channel_id,
                 thread_ts=self.thread_ts,
@@ -744,4 +744,4 @@ class ChatSession:
             self._generate_from_model(messages_with_instr)
 
         # 6. Generate and set the thread title after the response is complete
-        self._set_thread_title(messages_with_instr)
+        self._set_thread_title(messages)
