@@ -142,7 +142,7 @@ class ChatSession:
                     # Append the content of URLs to this text
                     if sent_by_user:
                         # ["blocks"][0]["elements"][0]["elements"][1]["url"]
-                        blocks = message.get("blocks")
+                        blocks = message.get("blocks", [])
                         for block in blocks:
                             elements = block.get("elements", [])
                             for element in elements:
@@ -552,6 +552,7 @@ class ChatSession:
         self._set_chat_status(f"ADK agent [{self.agent}] is generating...")
 
         # Get the latest user message as the query
+        # TODO: Handle session history
         query = messages[-1].content if messages else ""
 
         # Post initial message
@@ -583,17 +584,14 @@ class ChatSession:
                 if self.debug_mode and event.content:
                     self.logger.debug(f"ADK Event: {event}")
 
-                # Check for final response first - it repeats all content, so skip it
-                if event.is_final_response():
-                    if event.actions and event.actions.escalate:
-                        streaming_state[
-                            "current_message"
-                        ] += f"\n\nAgent escalated: {event.error_message or 'No specific message.'}"
-                    break
-
                 # Intermediate chunks are incremental (new content only)
                 if event.content and event.content.parts:
                     new_chunk = event.content.parts[0].text or ""
+                    if event.is_final_response() and new_chunk.startswith(
+                        streaming_state["current_message"]
+                    ):
+                        # Remove the prefix if repeated in final response
+                        new_chunk = new_chunk[len(streaming_state["current_message"]) :]
                     streaming_state["current_message"] += new_chunk
                     current_time = time.time()
 
@@ -632,6 +630,13 @@ class ChatSession:
                                 ts=streaming_state["message_ts"],
                                 text=f"{streaming_state['current_message']} ... [[ {self.agent} generating ]] ...",
                             )
+                            # Check for final response first - it repeats all content, so skip it
+                if event.is_final_response():
+                    if event.actions and event.actions.escalate:
+                        streaming_state[
+                            "current_message"
+                        ] += f"\n\nAgent escalated: {event.error_message or 'No specific message.'}"
+                    break
 
         # Run the async agent
         try:
@@ -706,6 +711,8 @@ class ChatSession:
 
         # 2. Fetch conversation history and past commands
         messages, commands = self.fetch_conversation_history()
+        if not messages:
+            messages = [ChatMessage.from_user(text)]
 
         # 3. Process commands
         if self.is_command(text):
