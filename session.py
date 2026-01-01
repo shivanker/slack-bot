@@ -551,10 +551,6 @@ class ChatSession:
         self.logger.debug(f"Generating response using ADK agent: {self.agent}")
         self._set_chat_status(f"ADK agent [{self.agent}] is generating...")
 
-        # Get the latest user message as the query
-        # TODO: Handle session history
-        query = messages[-1].content if messages else ""
-
         # Post initial message
         message_ts = self.client.chat_postMessage(
             channel=self.channel_id,
@@ -579,7 +575,7 @@ class ChatSession:
                 agent=agent,
                 user_id=self.user_id,
                 session_id=self.thread_ts,
-                query=query,
+                history=messages,
             ):
                 if self.debug_mode and event.content:
                     self.logger.debug(f"ADK Event: {event}")
